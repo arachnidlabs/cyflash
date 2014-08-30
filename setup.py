@@ -25,4 +25,5 @@ setup(
     author = "Nick Johnson",
     author_email = "nick@arachnidlabs.com",
     url = "http://github.com/arachnidlabs/cyflash/",
+    install_requires = "pyserial",
     )

@@ -1,7 +1,7 @@
 """PSoC bootloader command line tool."""
 
 
-__version__ = "1.0"
+__version__ = "1.01"
 
 
 import argparse
