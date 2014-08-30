@@ -11,6 +11,8 @@ does the rest.
 Cyflash also has the advantage of being about 5 times faster than Cypress's
 tool, being cross-platform, and not requiring all of PSoC creator to work.
 
+Install cyflash with `pip install cyflash`.
+
 Example command line:
 
     cyflash --serial=/dev/tty.usb-device myfirmware.cyacd
