@@ -11,7 +11,8 @@ does the rest.
 Cyflash also has the advantage of being about 5 times faster than Cypress's
 tool, being cross-platform, and not requiring all of PSoC creator to work.
 
-Install cyflash with `pip install cyflash`.
+Install cyflash from pypi with `pip install cyflash`, or (from source)
+`python setup.py install`.
 
 Example command line:
 
