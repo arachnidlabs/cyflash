@@ -86,6 +86,8 @@ def make_session(args, checksum_type):
 	if args.serial:
 		import serial
 		ser = serial.Serial(args.serial, args.serial_baudrate, timeout=args.timeout)
+		ser.flushInput()		# need to clear any garbage off the serial port
+		ser.flushOutput()
 		transport = protocol.SerialTransport(ser)
 	else:
 		raise BootloaderError("No valid interface specified")
