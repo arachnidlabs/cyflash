@@ -86,6 +86,8 @@ def make_session(args, checksum_type):
 	if args.serial:
 		import serial
 		ser = serial.Serial(args.serial, args.serial_baudrate, timeout=args.timeout)
+		ser.flushInput()		# need to clear any garbage off the serial port
+		ser.flushOutput()
 		transport = protocol.SerialTransport(ser)
 	else:
 		raise BootloaderError("No valid interface specified")
@@ -162,7 +164,8 @@ class BootloaderHost(object):
 			return
 
 		# TODO: Make this less horribly hacky
-		metadata_row = data.arrays[0][self.row_ranges[0][1]]
+		# Fetch from last row of last flash array
+		metadata_row = data.arrays[max(data.arrays.keys())][self.row_ranges[max(data.arrays.keys())][1]]
 		local_metadata = protocol.GetMetadataResponse(metadata_row.data[64:120])
 
 		if metadata.app_version > local_metadata.app_version:
