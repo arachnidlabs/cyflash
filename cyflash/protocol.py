@@ -224,11 +224,14 @@ class BootloaderSession(object):
     def __init__(self, transport, checksum_func):
         self.transport = transport
         self.checksum_func = checksum_func
+        self.debug = False
 
     def send(self, command, read=True):
         data = command.data
         packet = "\x01" + struct.pack("<BH", command.COMMAND, len(data)) + data
         packet = packet + struct.pack('<H', self.checksum_func(packet)) + "\x17"
+        if self.debug:
+            print "Sending %s" % ("".join(" 0x%02x" % ord(b) for b in packet))
         self.transport.send(packet)
         if read:
             response = self.transport.recv()
@@ -262,10 +265,15 @@ class BootloaderSession(object):
     def get_row_checksum(self, array_id, row_id):
         return self.send(VerifyRowCommand(array_id=array_id, row_id=row_id)).checksum
 
+    def send_data(self, data):
+        self.send(SendDataCommand(
+            data))
+
 
 class SerialTransport(object):
     def __init__(self, f):
         self.f = f
+        self.debug = False
 
     def send(self, data):
         self.f.write(data)
@@ -278,6 +286,8 @@ class SerialTransport(object):
         data += self.f.read(size + 3)
         if len(data) < size + 7:
             raise TimeoutError("Timed out waiting for Bootloader response.")
+        if self.debug:
+            print "Received %s" % ("".join(" 0x%02x" % ord(b) for b in data))
         return data
 
 
@@ -295,3 +305,12 @@ def crc16_checksum(data):
 
     crc = (crc << 8) | (crc >> 8)
     return ~crc & 0xffff
+
+def summation_checksum(data):
+    checksum = 0
+
+    for b in data:
+        checksum += ord(b)
+    checksum = 1 + ~checksum
+
+    return checksum & 0xffff
