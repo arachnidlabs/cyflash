@@ -9,38 +9,48 @@ class BootloaderError(Exception):
 
 
 class TimeoutError(BootloaderError):
+    __name__ = 'TimeoutError'
     pass
 
 
 class IncorrectLength(BootloaderError):
+    __name__ = 'IncorrectLength'
+    tip = "Maybe the host UART RX/TX buffer size is smaller than the programming chunk"
     STATUS = 0x03
 
 
 class InvalidData(BootloaderError):
+    __name__ = 'InvalidData'
     STATUS = 0x04
 
 
 class InvalidCommand(BootloaderError):
+    __name__ = 'InvalidCommand'
     STATUS = 0x05
 
 
 class InvalidChecksum(BootloaderError):
+    __name__ = 'InvalidChecksum'
     STATUS = 0x08
 
 
 class InvalidArray(BootloaderError):
+    __name__ = 'InvalidArray'
     STATUS = 0x09
 
 
 class InvalidFlashRow(BootloaderError):
+    __name__ = 'InvalidFlashRow'
     STATUS = 0x0A
 
 
 class InvalidApp(BootloaderError):
+    __name__ = 'InvalidApp'
     STATUS = 0x0C
 
 
 class UnknownError(BootloaderError):
+    __name__ = 'UnknownError'
     STATUS = 0x0F
 
 
@@ -79,7 +89,7 @@ class BootloaderResponse(object):
             raise InvalidPacketError()
 
         data = data[4:]
-        if status == 0x00:
+        if status == 0x00:          
             return cls(data)
         else:
             response_class = cls.ERRORS.get(status)

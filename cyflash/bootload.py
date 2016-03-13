@@ -133,6 +133,7 @@ class BootloaderHost(object):
 		self.session.exit_bootloader()
 
 	def verify_row_ranges(self, data):
+                self.out.write("Verifying row range...\n")
 		for array_id, array in data.arrays.iteritems():
 			start_row, end_row = self.session.get_flash_size(array_id)
 			self.out.write("Array %d: first row %d, last row %d.\n" % (
@@ -143,11 +144,12 @@ class BootloaderHost(object):
 					raise BootloaderError(
 						"Row %d in array %d out of range. Aborting."
 						% (row_number, array_id))
+		self.out.write("Ok!\n\n")
 
 	def enter_bootloader(self, data):
-		self.out.write("Initialising bootloader.\n")
+		self.out.write("Initialising bootloader...\n")
 		silicon_id, silicon_rev, bootloader_version = self.session.enter_bootloader()
-		self.out.write("Silicon ID 0x%.8x, revision %d.\n" % (silicon_id, silicon_rev))
+		self.out.write("Entered bootloader! Silicon ID 0x%.8x, revision %d.\n\n" % (silicon_id, silicon_rev))
 		if silicon_id != data.silicon_id:
 			raise ValueError("Silicon ID of device (0x%.8x) does not match firmware file (0x%.8x)"
 							 % (silicon_id, data.silicon_id))
@@ -156,18 +158,27 @@ class BootloaderHost(object):
 							 % (silicon_rev, data.silicon_rev))
 
 	def check_metadata(self, data, downgrade, newapp):
+                self.out.write("Checking metadata...\n")
 		try:
-			metadata = self.session.get_metadata(0)
-			self.out.write("Device application_id %d, version %d.\n" % (
-				metadata.app_id, metadata.app_version))
+                        metadata = self.session.get_metadata(0)
+                        self.out.write("Device application_id %d, version %d.\n\n" % (
+                                metadata.app_id, metadata.app_version))
 		except protocol.InvalidApp:
-			self.out.write("No valid application on device.\n")
+			self.out.write("No valid application on device.\n\n")
 			return
+		except protocol.InvalidCommand:
+                        self.out.write("Invalid Command! Maybe metadata is not supported.\n\n")
+                        return
+                except Exception as e:
+                        self.out.write("Error fetching metadata: " + e.__name__ + "\n\n")
+                        return
 
 		# TODO: Make this less horribly hacky
 		# Fetch from last row of last flash array
 		metadata_row = data.arrays[max(data.arrays.keys())][self.row_ranges[max(data.arrays.keys())][1]]
 		local_metadata = protocol.GetMetadataResponse(metadata_row.data[64:120])
+		self.out.write("Image application_id %d, version %d.\n\n" % (
+				local_metadata.app_id, local_metadata.app_version))
 
 		if metadata.app_version > local_metadata.app_version:
 			message = "Device application version is v%d.%d, but local application version is v%d.%d." % (
@@ -183,12 +194,19 @@ class BootloaderHost(object):
 				raise ValueError(message + " Aborting.")
 
 	def write_rows(self, data):
+                self.out.write("Writing rows...\n")
 		total = sum(len(x) for x in data.arrays.values())
 		i = 0
 		for array_id, array in data.arrays.iteritems():
 			for row_number, row in array.iteritems():
 				i += 1
-				self.session.program_row(array_id, row_number, row.data)
+				try:
+                                        print len(row.data)
+                                        self.session.program_row(array_id, row_number, row.data)
+                                except Exception as e:
+                                        raise BootloaderError("Error programming row %d: %s - %s !!" %
+                                                              (row_number, e.__name__, e.tip))
+
 				actual_checksum = self.session.get_row_checksum(array_id, row_number)
 				if actual_checksum != row.checksum:
 					raise BootloaderError(
