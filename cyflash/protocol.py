@@ -281,6 +281,16 @@ class SerialTransport(object):
         return data
 
 
+def sum_checksum(data):
+    sum = 0
+
+    for b in data:
+        b = ord(b)
+        sum = sum+b
+
+    sum = 0x10000 - sum
+    return sum & 0xFFFF
+
 def crc16_checksum(data):
     crc = 0xffff
 

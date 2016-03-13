@@ -75,6 +75,7 @@ parser.add_argument(
 
 
 checksum_types = {
+	0: protocol.sum_checksum,
 	1: protocol.crc16_checksum,
 }
 
@@ -95,7 +96,7 @@ def make_session(args, checksum_type):
 	try:
 		checksum_func = checksum_types[checksum_type]
 	except KeyError:
-		raise BootloaderError("Invalid checksum type: %d" % (checksum_type,))
+		raise BootloaderError("Invalid or not implemented checksum type: %d" % (checksum_type,))
 
 	return protocol.BootloaderSession(transport, checksum_func)
 
