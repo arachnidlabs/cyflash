@@ -1,7 +1,7 @@
 """PSoC bootloader command line tool."""
 
 
-__version__ = "1.05"
+__version__ = "1.1"
 
 
 import argparse
@@ -39,6 +39,23 @@ parser.add_argument(
 	type=float,
 	help="Time to wait for a Bootloader response (default 5)")
 
+parser.add_argument(
+	'--parity',
+	action='store',
+	dest='parity',
+	default='N',
+	choices=['N', 'E', 'O'],
+	help="Sets parity to [N]one, [E]ven or [O]dd (default N)")
+
+parser.add_argument(
+	'--stopbits',
+	action='store',
+	dest='stopbits',
+        type=int,
+	default='1',
+	choices=[1, 2],
+	help="Sets number of stopbits (default 1)")
+
 group = parser.add_mutually_exclusive_group()
 group.add_argument(
 	'--downgrade',
@@ -71,9 +88,20 @@ parser.add_argument(
         '--chunksize',
         action='store',
         type=int,
-        choices=[32, 64, 128],
+        choices=[16, 32, 64, 128],
         default=32,
-        help="Chunk size of data sent in the communication packet, in bytes. Default is 32.")
+        help="Chunk size of data sent in the communication packet, in bytes. (default is 32)")
+
+parser.add_argument(
+        '-r',
+        '--repetitive-init-sec',
+        dest='repinits',
+        action='store',
+        type=int,
+	metavar='SECS',
+        default=2,
+        help="Repetitively send data to initialize bootloader every 100 ms for the specified time." + 
+                "This gives time to unplug/plug the equipment, press a reset button or so. Zero gives only one try. Negative goes infinite. (default is 2 secs)")
 
 parser.add_argument(
 	'image',
@@ -94,7 +122,8 @@ class BootloaderError(Exception): pass
 def make_session(args, checksum_type):
 	if args.serial:
 		import serial
-		ser = serial.Serial(args.serial, args.serial_baudrate, timeout=args.timeout)
+		ser = serial.Serial(args.serial, args.serial_baudrate,
+                        timeout=args.timeout, stopbits=args.stopbits, parity=args.parity)
 		ser.flushInput()		# need to clear any garbage off the serial port
 		ser.flushOutput()
 		transport = protocol.SerialTransport(ser)
@@ -123,10 +152,12 @@ def seek_permission(default, message):
 
 
 class BootloaderHost(object):
-	def __init__(self, session, out):
+	def __init__(self, session, out, repinits):
 		self.session = session
 		self.out = out
 		self.row_ranges = {}
+		self.errors = 0
+		self.repinits = repinits
 
 	def bootload(self, data, downgrade, newapp):
 		self.enter_bootloader(data)
@@ -156,7 +187,7 @@ class BootloaderHost(object):
 
 	def enter_bootloader(self, data):
 		self.out.write("Initialising bootloader...\n")
-		silicon_id, silicon_rev, bootloader_version = self.session.enter_bootloader()
+		silicon_id, silicon_rev, bootloader_version = self.session.enter_bootloader(self.repinits)
 		self.out.write("Entered bootloader! Silicon ID 0x%.8x, revision %d.\n\n" % (silicon_id, silicon_rev))
 		if silicon_id != data.silicon_id:
 			raise ValueError("Silicon ID of device (0x%.8x) does not match firmware file (0x%.8x)"
@@ -207,26 +238,38 @@ class BootloaderHost(object):
 		i = 0
 		for array_id, array in data.arrays.iteritems():
 			for row_number, row in array.iteritems():
-				i += 1
-				try:
-                                        self.session.program_row(array_id, row_number, row.data)
-                                except Exception as e:
-                                        raise BootloaderError("Error programming row %d: %s - %s !!" %
-                                                              (row_number, e.__name__, e.tip))
+                                tries = 3
+                                while tries:
+                                        try:
+                                                self.session.program_row(array_id, row_number, row.data)
+                                        except protocol.IncorrectLength:
+                                                raise BootloaderError(
+                                                "\nError programming row %d: IncorrectLength !!\n\tMaybe the host UART RX/TX buffer size is smaller than the programming chunk, try a smaller chunk size."
+                                                        % row_number)
+                                        except Exception as e:
+                                                raise BootloaderError("\nError programming row %d: %s !!" %
+                                                                      (row_number, e.__name__))
 
-				actual_checksum = self.session.get_row_checksum(array_id, row_number)
-				if actual_checksum != row.checksum:
-					raise BootloaderError(
-						"Checksum does not match in array %d row %d. Expected %.2x, got %.2x! Aborting." % (
-							array_id, row_number, row.checksum, actual_checksum))
-				self.progress("Uploading data", i, total)
+                                        actual_checksum = self.session.get_row_checksum(array_id, row_number)
+                                        if actual_checksum == row.checksum:
+                                                break
+                                        else:
+                                                tries = tries-1
+                                                self.errors = self.errors+1
+                                                if tries == 0:
+                                                        raise BootloaderError(
+                                                                "Checksum does not match in array %d row %d. Expected %.2x, got %.2x! Tried 3 times. Aborting." % (
+                                                                        array_id, row_number, row.checksum, actual_checksum))
+
+				i += 1
+				self.progress("Uploading data", i, total, self.errors+self.session.errors)
 			self.progress()
 
-	def progress(self, message=None, current=None, total=None):
+	def progress(self, message=None, current=None, total=None, errors=None):
 		if not message:
 			self.out.write("\n")
 		else:
-			self.out.write("\r%s (%d/%d)" % (message, current, total))
+			self.out.write("\r%s (%d/%d), errors %d" % (message, current, total, errors))
 		self.out.flush()
 
 
@@ -234,7 +277,7 @@ def main():
 	args = parser.parse_args()
 	data = cyacd.BootloaderData.read(args.image)
 	session = make_session(args, data.checksum_type)
-	bl = BootloaderHost(session, sys.stdout)
+	bl = BootloaderHost(session, sys.stdout, args.repinits)
 	try:
 		bl.bootload(
 			data,

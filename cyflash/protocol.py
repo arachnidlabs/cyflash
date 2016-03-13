@@ -1,6 +1,8 @@
 import struct
+import time
 
 class InvalidPacketError(Exception):
+    __name__ = 'InvalidPacketError'
     pass
 
 
@@ -15,7 +17,6 @@ class TimeoutError(BootloaderError):
 
 class IncorrectLength(BootloaderError):
     __name__ = 'IncorrectLength'
-    tip = "Maybe the host UART RX/TX buffer size is smaller than the programming chunk"
     STATUS = 0x03
 
 
@@ -235,20 +236,53 @@ class BootloaderSession(object):
         self.transport = transport
         self.checksum_func = checksum_func
         self.chunksize = chunksize
+        self.errors = 0
 
     def send(self, command, read=True):
+        tries = 5
         data = command.data
         packet = "\x01" + struct.pack("<BH", command.COMMAND, len(data)) + data
         packet = packet + struct.pack('<H', self.checksum_func(packet)) + "\x17"
-        self.transport.send(packet)
-        if read:
-            response = self.transport.recv()
-            return command.RESPONSE.decode(response, self.checksum_func)
-        else:
-            return None
 
-    def enter_bootloader(self):
+        while tries:
+            try:
+                self.transport.send(packet)
+
+                if read:
+                    response = self.transport.recv()
+                    r = command.RESPONSE.decode(response, self.checksum_func)
+                    return r
+                else:
+                    return None
+            except InvalidPacketError:
+                tries = tries-1
+                self.errors = self.errors+1
+                if tries == 0:
+                    raise "Too many invalid packet errors, high error rate in data link! Please check parity, cable length, etc."
+            except Exception as e:
+                raise e
+
+    def enter_bootloader(self, repinits):
+        savedtimeout = self.transport.f.timeout
+        if repinits:
+            self.transport.f.timeout = 0.1
+
+        repinits = repinits*10
+        while repinits:
+            try:
+                self.send(EnterBootloaderCommand())
+                repinits = 0
+            except:
+                repinits = repinits - 1
+
+        # Looks like its useful when a previous wasnt complete but the bootloader wasnt reset.
+        self.send(SyncBootloaderCommand(), read=False)
+        time.sleep(0.1)
         response = self.send(EnterBootloaderCommand())
+
+        self.transport.f.timeout = savedtimeout
+        self.errors = 0
+
         return response.silicon_id, response.silicon_rev, response.bl_version | (response.bl_version_2 << 16)
 
     def exit_bootloader(self):
