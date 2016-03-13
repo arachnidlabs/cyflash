@@ -231,9 +231,10 @@ class GetMetadataCommand(BootloaderCommand):
 
 
 class BootloaderSession(object):
-    def __init__(self, transport, checksum_func):
+    def __init__(self, transport, checksum_func, chunksize):
         self.transport = transport
         self.checksum_func = checksum_func
+        self.chunksize = chunksize
 
     def send(self, command, read=True):
         data = command.data
@@ -264,10 +265,20 @@ class BootloaderSession(object):
         return self.send(GetMetadataCommand(application_id=application_id))
 
     def program_row(self, array_id, row_id, rowdata):
-        self.send(ProgramRowCommand(
-            rowdata,
-            array_id=array_id,
-            row_id=row_id))
+        if (len(rowdata) % self.chunksize) != 0:
+            raise "row is not divisible into integer chunks!"
+
+        r = range(0, len(rowdata)+1, self.chunksize)
+        for i in range(0, len(r)):
+            s = slice(r[i], r[i+1])
+            if (r[i+1] == len(rowdata)):
+                self.send(ProgramRowCommand(
+                    rowdata[s],
+                    array_id=array_id,
+                    row_id=row_id))
+                break
+            else:
+                self.send(SendDataCommand(rowdata[s]))
 
     def get_row_checksum(self, array_id, row_id):
         return self.send(VerifyRowCommand(array_id=array_id, row_id=row_id)).checksum

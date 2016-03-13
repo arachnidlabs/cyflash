@@ -68,6 +68,14 @@ group.add_argument(
 	help="Fail instead of flashing an image with a different application ID")
 
 parser.add_argument(
+        '--chunksize',
+        action='store',
+        type=int,
+        choices=[32, 64, 128],
+        default=32,
+        help="Chunk size of data sent in the communication packet, in bytes. Default is 32.")
+
+parser.add_argument(
 	'image',
 	action='store',
 	type=argparse.FileType(mode='r'),
@@ -98,7 +106,7 @@ def make_session(args, checksum_type):
 	except KeyError:
 		raise BootloaderError("Invalid or not implemented checksum type: %d" % (checksum_type,))
 
-	return protocol.BootloaderSession(transport, checksum_func)
+	return protocol.BootloaderSession(transport, checksum_func, args.chunksize)
 
 
 def seek_permission(default, message):
@@ -201,7 +209,6 @@ class BootloaderHost(object):
 			for row_number, row in array.iteritems():
 				i += 1
 				try:
-                                        print len(row.data)
                                         self.session.program_row(array_id, row_number, row.data)
                                 except Exception as e:
                                         raise BootloaderError("Error programming row %d: %s - %s !!" %
