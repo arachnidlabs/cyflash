@@ -259,9 +259,7 @@ class BootloaderSession(object):
                 tries = tries-1
                 self.errors = self.errors+1
                 if tries == 0:
-                    raise "Too many invalid packet errors, high error rate in data link! Please check parity, cable length, etc."
-            except Exception as e:
-                raise e
+                    raise BootloaderError("Too many invalid packet errors, high error rate in data link! Please check parity, cable length, etc.")
 
     def enter_bootloader(self, repinits):
         savedtimeout = self.transport.f.timeout
@@ -301,7 +299,7 @@ class BootloaderSession(object):
 
     def program_row(self, array_id, row_id, rowdata):
         if (len(rowdata) % self.chunksize) != 0:
-            raise "row is not divisible into integer chunks!"
+            raise BootloaderError("row is not divisible into integer chunks!")
 
         r = range(0, len(rowdata)+1, self.chunksize)
         for i in range(0, len(r)):

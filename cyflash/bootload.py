@@ -214,9 +214,12 @@ class BootloaderHost(object):
                                 raise BootloaderError(e)
 
                         for row in range(start_row, end_row+1):
-                                self.session.erase_row(array_id, row)
+                                try:
+                                        self.session.erase_row(array_id, row)
+                                except Exception as e:
+                                        BootloaderError(e)
 
-				self.progress("Erasing row...", row, end_row, self.errors+self.session.errors)
+				self.progress("Erasing row...", row, end_row, self.session.errors)
                         array_id = array_id + 1
 			self.progress()
 		self.out.write("Done!\n\n")
@@ -242,7 +245,7 @@ class BootloaderHost(object):
 			self.out.write("No valid application on device.\n\n")
 			return
 		except protocol.InvalidCommand:
-                        self.out.write("Invalid Command! Maybe metadata is not supported.\n\n")
+                        self.out.write("Invalid Command! Maybe metadata is not supported by the bootloader.\n\n")
                         return
                 except Exception as e:
                         self.out.write("Error fetching metadata: " + e.__name__ + "\n\n")
