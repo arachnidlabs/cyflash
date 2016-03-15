@@ -6,12 +6,25 @@ __version__ = "1.1"
 
 import argparse
 import sys
+import time
 
 from . import cyacd
 from . import protocol
 
 
-parser = argparse.ArgumentParser(description="Bootloader tool for Cypress PSoC devices")
+parser = argparse.ArgumentParser(description="Bootloader tool for Cypress PSoC devices, version %s" % __version__)
+
+
+parser.add_argument(
+	'image',
+	action='store',
+	type=argparse.FileType(mode='r'),
+	help="Image to read flash data from")
+
+parser.add_argument(
+        '--erase',
+        action='store_true',
+        help="Erase the flash memory before write data.")
 
 group = parser.add_mutually_exclusive_group(required=True)
 group.add_argument(
@@ -85,6 +98,7 @@ group.add_argument(
 	help="Fail instead of flashing an image with a different application ID")
 
 parser.add_argument(
+        '-c',
         '--chunksize',
         action='store',
         type=int,
@@ -102,13 +116,6 @@ parser.add_argument(
         default=2,
         help="Repetitively send data to initialize bootloader every 100 ms for the specified time." + 
                 "This gives time to unplug/plug the equipment, press a reset button or so. Zero gives only one try. Negative goes infinite. (default is 2 secs)")
-
-parser.add_argument(
-	'image',
-	action='store',
-	type=argparse.FileType(mode='r'),
-	help="Image to read flash data from")
-
 
 checksum_types = {
 	0: protocol.sum_checksum,
@@ -159,10 +166,15 @@ class BootloaderHost(object):
 		self.errors = 0
 		self.repinits = repinits
 
-	def bootload(self, data, downgrade, newapp):
+	def bootload(self, data, downgrade, newapp, erase):
 		self.enter_bootloader(data)
 		self.verify_row_ranges(data)
 		self.check_metadata(data, downgrade, newapp)
+
+		if erase:
+                        self.erase_rows()
+                        time.sleep(0.5)
+
 		self.write_rows(data)
 		if not self.session.verify_checksum():
 			raise BootloaderError("Flash checksum does not verify! Aborting.")
@@ -185,9 +197,33 @@ class BootloaderHost(object):
 						% (row_number, array_id))
 		self.out.write("Ok!\n\n")
 
+        def erase_rows(self):
+                self.out.write("Erasing all rows...\n")
+
+                array_id = 0
+                while True:
+                        try:
+                                start_row, end_row = self.session.get_flash_size(array_id)
+                        # when the array doesnt exists on the device, gives the
+                        # InvalidData error. The InvalidArray is put just because i think it should be the behavior.
+                        except protocol.InvalidArray:
+                                break
+                        except protocol.InvalidData:
+                                break
+                        except Exception as e:
+                                raise BootloaderError(e)
+
+                        for row in range(start_row, end_row+1):
+                                self.session.erase_row(array_id, row)
+
+				self.progress("Erasing row...", row, end_row, self.errors+self.session.errors)
+                        array_id = array_id + 1
+			self.progress()
+		self.out.write("Done!\n\n")
+
 	def enter_bootloader(self, data):
 		self.out.write("Initialising bootloader...\n")
-		silicon_id, silicon_rev, bootloader_version = self.session.enter_bootloader(self.repinits)
+                silicon_id, silicon_rev, bootloader_version = self.session.enter_bootloader(self.repinits)
 		self.out.write("Entered bootloader! Silicon ID 0x%.8x, revision %d.\n\n" % (silicon_id, silicon_rev))
 		if silicon_id != data.silicon_id:
 			raise ValueError("Silicon ID of device (0x%.8x) does not match firmware file (0x%.8x)"
@@ -269,7 +305,7 @@ class BootloaderHost(object):
 		if not message:
 			self.out.write("\n")
 		else:
-			self.out.write("\r%s (%d/%d), errors %d" % (message, current, total, errors))
+			self.out.write("\r%s (%d/%d), packet errors %d" % (message, current, total, errors))
 		self.out.flush()
 
 
@@ -286,7 +322,8 @@ def main():
 				"Device version %d is greater than local version %d. Flash anyway? (Y/N)"),
 			seek_permission(
 				args.newapp,
-				"Device app ID %d is different from local app ID %d. Flash anyway? (Y/N)"))
+				"Device app ID %d is different from local app ID %d. Flash anyway? (Y/N)"),
+                                args.erase)
 	except (protocol.BootloaderError, BootloaderError), e:
 		print e.message
 		sys.exit(1)

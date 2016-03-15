@@ -84,13 +84,14 @@ class BootloaderResponse(object):
             raise InvalidPacketError()
         checksum, end = struct.unpack("<HB", data[-3:])
         data = data[:length+4]
+
         if end != 0x17:
             raise InvalidPacketError()
+
         if checksum != checksum_func(data):
             raise InvalidPacketError()
-
         data = data[4:]
-        if status == 0x00:          
+        if status == 0x00:
             return cls(data)
         else:
             response_class = cls.ERRORS.get(status)
@@ -313,6 +314,11 @@ class BootloaderSession(object):
                 break
             else:
                 self.send(SendDataCommand(rowdata[s]))
+
+    def erase_row (self, array_id, row):
+        self.send(EraseRowCommand(
+            array_id=array_id,
+            row_id=row))
 
     def get_row_checksum(self, array_id, row_id):
         return self.send(VerifyRowCommand(array_id=array_id, row_id=row_id)).checksum
