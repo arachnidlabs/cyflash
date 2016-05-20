@@ -1,4 +1,5 @@
 import struct
+import time
 
 class InvalidPacketError(Exception):
     pass
@@ -14,14 +15,20 @@ class TimeoutError(BootloaderError):
 
 class IncorrectLength(BootloaderError):
     STATUS = 0x03
+    def __init__(self):
+        super().__init__("The amount of data available is outside the expected range")
 
 
 class InvalidData(BootloaderError):
     STATUS = 0x04
+    def __init__(self):
+        super().__init__("The data is not of the proper form")
 
 
 class InvalidCommand(BootloaderError):
     STATUS = 0x05
+    def __init__(self):
+        super().__init__("Command unsupported on target device")
 
 
 class InvalidChecksum(BootloaderError):
@@ -68,26 +75,29 @@ class BootloaderResponse(object):
     def decode(cls, data, checksum_func):
         start, status, length = struct.unpack("<BBH", data[:4])
         if start != 0x01:
-            raise InvalidPacketError()
-        if length != len(data) - 7:
-            raise InvalidPacketError()
+            raise InvalidPacketError("Expected Start Of Packet signature 0x01, found 0x{0:01X}".format(start))
+        
+        expected_dlen = len(data) - 7
+        if length != expected_dlen:
+            raise InvalidPacketError("Expected packet data length {} actual {}".format(length, expected_dlen))
+
         checksum, end = struct.unpack("<HB", data[-3:])
         data = data[:length+4]
         if end != 0x17:
-            raise InvalidPacketError()
-        if checksum != checksum_func(data):
-            raise InvalidPacketError()
+            raise InvalidPacketError("Invalid end of packet code 0x{0:02X}, expected 0x17".format(end))
+        calculated_checksum = checksum_func(data)
+        if checksum != calculated_checksum:
+            raise InvalidPacketError("Invalid packet checksum 0x{0:02X}, expected 0x{1:02X}".format(checksum, calculated_checksum))
 
-        data = data[4:]
-        if status == 0x00:
-            return cls(data)
-        else:
+        if (status != 0x00):
             response_class = cls.ERRORS.get(status)
             if response_class:
                 raise response_class()
             else:
-                raise InvalidPacketError()
+                raise InvalidPacketError("Unknown status code 0x{0:02X}".format(status))
 
+        data = data[4:]
+        return cls(data)
 
 class BootloaderCommand(object):
     COMMAND = None
@@ -227,8 +237,8 @@ class BootloaderSession(object):
 
     def send(self, command, read=True):
         data = command.data
-        packet = "\x01" + struct.pack("<BH", command.COMMAND, len(data)) + data
-        packet = packet + struct.pack('<H', self.checksum_func(packet)) + "\x17"
+        packet = b"\x01" + struct.pack("<BH", command.COMMAND, len(data)) + data
+        packet = packet + struct.pack('<H', self.checksum_func(packet)) + b"\x17"
         self.transport.send(packet)
         if read:
             response = self.transport.recv()
@@ -254,10 +264,7 @@ class BootloaderSession(object):
         return self.send(GetMetadataCommand(application_id=application_id))
 
     def program_row(self, array_id, row_id, rowdata):
-        self.send(ProgramRowCommand(
-            rowdata,
-            array_id=array_id,
-            row_id=row_id))
+        self.send(ProgramRowCommand(rowdata, array_id=array_id, row_id=row_id))
 
     def get_row_checksum(self, array_id, row_id):
         return self.send(VerifyRowCommand(array_id=array_id, row_id=row_id)).checksum
@@ -280,6 +287,85 @@ class SerialTransport(object):
             raise TimeoutError("Timed out waiting for Bootloader response.")
         return data
 
+class CANbusTransport(object):
+    MESSAGE_CLASS = None
+
+    def __init__(self, transport, frame_id, timeout):
+        self.transport = transport
+        self.frame_id = frame_id
+        self.timeout = timeout
+
+    def send(self, data):
+        start = 0
+        maxlen = len(data)
+        while (start < maxlen):
+            remaining = maxlen - start
+            
+            if (remaining > 8):
+                msg = self.MESSAGE_CLASS(
+                    extended_id=False,
+                    arbitration_id=self.frame_id,
+                    data=data[start:start+8]
+                )
+            else:
+                msg = self.MESSAGE_CLASS(
+                    extended_id=False,
+                    arbitration_id=self.frame_id,
+                    data=data[start:]
+                )
+            
+            self.transport.send(msg)
+            while (True):
+                frame = self.transport.recv(self.timeout)
+                if (not frame):
+                    raise TimeoutError("Did not receive echo frame within {} timeout".format(self.timeout))
+                if (frame.data[:frame.dlc] != msg.data[:msg.dlc]):
+                    continue
+                break
+            start += 8
+            time.sleep(0.05)
+
+    def recv(self):
+        # Response packets read from the Bootloader have the following structure:
+        # Start of Packet (0x01): 1 byte
+        # Status Code: 1 byte
+        # Data Length: 2 bytes
+        # Data: N bytes of data
+        # Checksum: 2 bytes
+        # End of Packet (0x17): 1 byte
+        data = bytearray()
+        # Read first frame, contains data length
+        while (True):
+            frame = self.transport.recv(self.timeout)
+            if (not frame):
+                raise TimeoutError("Timed out waiting for Bootloader 1st response frame")
+            
+            if (frame.arbitration_id != self.frame_id):
+                # Got a frame from another device, ignore
+                continue
+            
+            if len(frame.data) < 4:
+                raise TimeoutError("Unexpected response data: length {}, minimum is 4".format(len(frame.data)))
+            
+            if (frame.data[0] != 0x01):
+                raise TimeoutError("Unexpected start of frame data: 0x{0:02X}, expected 0x01".format(frame.data[0]))
+            data += frame.data[:frame.dlc]
+            break
+        
+        # 4 initial bytes, reported size, 3 tail
+        total_size = 4 + (struct.unpack("<H", data[2:4])[0]) + 3
+        while (len(data) < total_size):
+            frame = self.transport.recv(self.timeout)
+            if (not frame):
+                raise TimeoutError("Timed out waiting for Bootloader response frame")
+            
+            if (frame.arbitration_id != self.frame_id):
+                # Got a frame from another device, ignore
+                continue
+            
+            data += frame.data[:frame.dlc]
+        
+        return data
 
 def crc16_checksum(data):
     crc = 0xffff
@@ -295,3 +381,6 @@ def crc16_checksum(data):
 
     crc = (crc << 8) | (crc >> 8)
     return ~crc & 0xffff
+
+def sum_2complement_checksum(data):
+    return (1 + ~sum(data)) & 0xFFFF
