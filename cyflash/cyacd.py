@@ -14,6 +14,7 @@ class BootloaderRow(object):
         self = cls()
         if data[0] != ':':
             raise ValueError("Bootloader rows must start with a colon")
+        # Python2
         #data = data[1:].decode('hex')
         data = hex_decoder(data[1:])[0]
         self.array_id, self.row_number, data_length = struct.unpack('>BHH', data[:5])
@@ -21,8 +22,10 @@ class BootloaderRow(object):
         if len(self.data) != data_length:
             raise ValueError("Row specified %d bytes of data, but got %d"
                              % (data_length, len(self.data)))
+        # Python2. data is already a bytes object in Py3
         #(checksum,) = struct.unpack('B', data[-1])
         checksum = data[-1]
+        # Python2, see above
         #data_checksum = 0x100 - (sum(ord(x) for x in data[:-1]) & 0xFF)
         data_checksum = 0x100 - (sum(x for x in data[:-1]) & 0xFF)
         if data_checksum == 0x100:
@@ -35,9 +38,9 @@ class BootloaderRow(object):
     @property
     def checksum(self):
         """Returns the data checksum. Should match what the bootloader returns."""
-        return (1 + ~sum(self.data)) & 0xFF
         # Python2
         # return 0xFF & (1 + ~sum(ord(x) for x in self.data))
+        return (1 + ~sum(self.data)) & 0xFF
 
 
 class BootloaderData(object):
@@ -60,7 +63,6 @@ class BootloaderData(object):
         self.silicon_id, self.silicon_rev, self.checksum_type = struct.unpack('>LBB', header)
         for i, line in enumerate(f):
             row = BootloaderRow.read(line.strip(), i + 2)
-            print ("Decoded array {0.array_id} row number {0.row_number} {1} data bytes".format(row, len(row.data)))
             if row.array_id not in self.arrays:
                 self.arrays[row.array_id] = {}
             self.arrays[row.array_id][row.row_number] = row
