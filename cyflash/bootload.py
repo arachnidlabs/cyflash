@@ -1,7 +1,7 @@
 """PSoC bootloader command line tool."""
 
 
-__version__ = "1.05"
+__version__ = "1.07"
 
 
 import argparse
@@ -75,6 +75,7 @@ parser.add_argument(
 
 
 checksum_types = {
+        0: protocol.summation_checksum,
 	1: protocol.crc16_checksum,
 }
 
@@ -86,8 +87,6 @@ def make_session(args, checksum_type):
 	if args.serial:
 		import serial
 		ser = serial.Serial(args.serial, args.serial_baudrate, timeout=args.timeout)
-		ser.flushInput()		# need to clear any garbage off the serial port
-		ser.flushOutput()
 		transport = protocol.SerialTransport(ser)
 	else:
 		raise BootloaderError("No valid interface specified")
@@ -122,7 +121,9 @@ class BootloaderHost(object):
 	def bootload(self, data, downgrade, newapp):
 		self.enter_bootloader(data)
 		self.verify_row_ranges(data)
-		self.check_metadata(data, downgrade, newapp)
+		if (data.checksum_type == 1):
+                        # Only check metadata if using a CRC16 for checksums 
+                        self.check_metadata(data, downgrade, newapp)
 		self.write_rows(data)
 		if not self.session.verify_checksum():
 			raise BootloaderError("Flash checksum does not verify! Aborting.")
@@ -153,6 +154,8 @@ class BootloaderHost(object):
 		if silicon_rev != data.silicon_rev:
 			raise ValueError("Silicon revision of device (0x%.2x) does not match firmware file (0x%.2x)"
 							 % (silicon_rev, data.silicon_rev))
+		self.out.write("Bootloader version: %d.%d\n" % (((bootloader_version >> 8) & 0xff),
+                                                        (bootloader_version & 0xff)))
 
 	def check_metadata(self, data, downgrade, newapp):
 		try:
@@ -164,15 +167,14 @@ class BootloaderHost(object):
 			return
 
 		# TODO: Make this less horribly hacky
-		# Fetch from last row of last flash array
-		metadata_row = data.arrays[max(data.arrays.keys())][self.row_ranges[max(data.arrays.keys())][1]]
+		metadata_row = data.arrays[0][self.row_ranges[0][1]]
 		local_metadata = protocol.GetMetadataResponse(metadata_row.data[64:120])
 
 		if metadata.app_version > local_metadata.app_version:
 			message = "Device application version is v%d.%d, but local application version is v%d.%d." % (
 				metadata.app_version >> 8, metadata.app_version & 0xFF,
 				local_metadata.app_version >> 8, local_metadata.app_version & 0xFF)
-			if not downgrade(metadata.app_version, loca_metadata.app_version):
+			if not downgrade(metadata.app_version, local_metadata.app_version):
 				raise ValueError(message + " Aborting.")
 
 		if metadata.app_id != local_metadata.app_id:
@@ -187,12 +189,24 @@ class BootloaderHost(object):
 		for array_id, array in data.arrays.iteritems():
 			for row_number, row in array.iteritems():
 				i += 1
-				self.session.program_row(array_id, row_number, row.data)
-				actual_checksum = self.session.get_row_checksum(array_id, row_number)
-				if actual_checksum != row.checksum:
-					raise BootloaderError(
-						"Checksum does not match in array %d row %d. Expected %.2x, got %.2x! Aborting." % (
-							array_id, row_number, row.checksum, actual_checksum))
+                                if (data.checksum_type == 1):
+                                        self.session.program_row(array_id, row_number, row.data)
+                                elif (data.checksum_type == 0):
+                                        TRANSFER_HEADER_SIZE = 11
+                                        MAX_TRANSFER_SIZE = 64
+                                        offset = 0
+                                        while (len(row.data) - offset + TRANSFER_HEADER_SIZE > MAX_TRANSFER_SIZE):
+                                                subBufSize = MAX_TRANSFER_SIZE - TRANSFER_HEADER_SIZE;
+                                                subdata = row.data[offset:offset + subBufSize]
+                                                self.session.send_data(subdata)
+                                                offset += subBufSize
+                                        subdata = row.data[offset:]
+                                        self.session.program_row(array_id, row_number, subdata)
+                                actual_checksum = self.session.get_row_checksum(array_id, row_number)
+                                if actual_checksum != row.checksum:
+                                        raise BootloaderError(
+                                                "Checksum does not match in array %d row %d. Expected %.2x, got %.2x! Aborting." % (
+                                                        array_id, row_number, row.checksum, actual_checksum))
 				self.progress("Uploading data", i, total)
 			self.progress()
 
