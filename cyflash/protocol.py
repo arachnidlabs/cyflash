@@ -1,6 +1,8 @@
 import struct
+import time
 
 class InvalidPacketError(Exception):
+    __name__ = 'InvalidPacketError'
     pass
 
 
@@ -9,38 +11,47 @@ class BootloaderError(Exception):
 
 
 class TimeoutError(BootloaderError):
+    __name__ = 'TimeoutError'
     pass
 
 
 class IncorrectLength(BootloaderError):
+    __name__ = 'IncorrectLength'
     STATUS = 0x03
 
 
 class InvalidData(BootloaderError):
+    __name__ = 'InvalidData'
     STATUS = 0x04
 
 
 class InvalidCommand(BootloaderError):
+    __name__ = 'InvalidCommand'
     STATUS = 0x05
 
 
 class InvalidChecksum(BootloaderError):
+    __name__ = 'InvalidChecksum'
     STATUS = 0x08
 
 
 class InvalidArray(BootloaderError):
+    __name__ = 'InvalidArray'
     STATUS = 0x09
 
 
 class InvalidFlashRow(BootloaderError):
+    __name__ = 'InvalidFlashRow'
     STATUS = 0x0A
 
 
 class InvalidApp(BootloaderError):
+    __name__ = 'InvalidApp'
     STATUS = 0x0C
 
 
 class UnknownError(BootloaderError):
+    __name__ = 'UnknownError'
     STATUS = 0x0F
 
 
@@ -73,11 +84,12 @@ class BootloaderResponse(object):
             raise InvalidPacketError()
         checksum, end = struct.unpack("<HB", data[-3:])
         data = data[:length+4]
+
         if end != 0x17:
             raise InvalidPacketError()
+
         if checksum != checksum_func(data):
             raise InvalidPacketError()
-
         data = data[4:]
         if status == 0x00:
             return cls(data)
@@ -221,23 +233,55 @@ class GetMetadataCommand(BootloaderCommand):
 
 
 class BootloaderSession(object):
-    def __init__(self, transport, checksum_func):
+    def __init__(self, transport, checksum_func, chunksize):
         self.transport = transport
         self.checksum_func = checksum_func
+        self.chunksize = chunksize
+        self.errors = 0
 
     def send(self, command, read=True):
+        tries = 5
         data = command.data
         packet = "\x01" + struct.pack("<BH", command.COMMAND, len(data)) + data
         packet = packet + struct.pack('<H', self.checksum_func(packet)) + "\x17"
-        self.transport.send(packet)
-        if read:
-            response = self.transport.recv()
-            return command.RESPONSE.decode(response, self.checksum_func)
-        else:
-            return None
 
-    def enter_bootloader(self):
+        while tries:
+            try:
+                self.transport.send(packet)
+
+                if read:
+                    response = self.transport.recv()
+                    r = command.RESPONSE.decode(response, self.checksum_func)
+                    return r
+                else:
+                    return None
+            except InvalidPacketError:
+                tries = tries-1
+                self.errors = self.errors+1
+                if tries == 0:
+                    raise BootloaderError("Too many invalid packet errors, high error rate in data link! Please check parity, cable length, etc.")
+
+    def enter_bootloader(self, repinits):
+        savedtimeout = self.transport.f.timeout
+        if repinits:
+            self.transport.f.timeout = 0.1
+
+        repinits = repinits*10
+        while repinits:
+            try:
+                self.send(EnterBootloaderCommand())
+                repinits = 0
+            except:
+                repinits = repinits - 1
+
+        # Looks like its useful when a previous wasnt complete but the bootloader wasnt reset.
+        self.send(SyncBootloaderCommand(), read=False)
+        time.sleep(0.1)
         response = self.send(EnterBootloaderCommand())
+
+        self.transport.f.timeout = savedtimeout
+        self.errors = 0
+
         return response.silicon_id, response.silicon_rev, response.bl_version | (response.bl_version_2 << 16)
 
     def exit_bootloader(self):
@@ -254,10 +298,25 @@ class BootloaderSession(object):
         return self.send(GetMetadataCommand(application_id=application_id))
 
     def program_row(self, array_id, row_id, rowdata):
-        self.send(ProgramRowCommand(
-            rowdata,
+        if (len(rowdata) % self.chunksize) != 0:
+            raise BootloaderError("row is not divisible into integer chunks!")
+
+        r = range(0, len(rowdata)+1, self.chunksize)
+        for i in range(0, len(r)):
+            s = slice(r[i], r[i+1])
+            if (r[i+1] == len(rowdata)):
+                self.send(ProgramRowCommand(
+                    rowdata[s],
+                    array_id=array_id,
+                    row_id=row_id))
+                break
+            else:
+                self.send(SendDataCommand(rowdata[s]))
+
+    def erase_row (self, array_id, row):
+        self.send(EraseRowCommand(
             array_id=array_id,
-            row_id=row_id))
+            row_id=row))
 
     def get_row_checksum(self, array_id, row_id):
         return self.send(VerifyRowCommand(array_id=array_id, row_id=row_id)).checksum
@@ -280,6 +339,16 @@ class SerialTransport(object):
             raise TimeoutError("Timed out waiting for Bootloader response.")
         return data
 
+
+def sum_checksum(data):
+    sum = 0
+
+    for b in data:
+        b = ord(b)
+        sum = sum+b
+
+    sum = 0x10000 - sum
+    return sum & 0xFFFF
 
 def crc16_checksum(data):
     crc = 0xffff
