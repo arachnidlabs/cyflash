@@ -6,6 +6,7 @@ __version__ = "1.05"
 
 import argparse
 import codecs
+import time
 import sys
 
 from . import cyacd
@@ -28,7 +29,7 @@ group.add_argument(
     dest='canbus',
     metavar='BUSTYPE',
     default=None,
-    help="CANbus backend supported by python-can")
+    help="Use a CANbus interface (requires python-can)")
 
 parser.add_argument(
     '--serial_baudrate',
@@ -45,8 +46,7 @@ parser.add_argument(
     metavar='BAUD',
     default=125000,
     type=int,
-    help="Baud rate to use when flashing using CANbus (default 125000)"
-)
+    help="Baud rate to use when flashing using CANbus (default 125000)")
 parser.add_argument(
     '--canbus_channel',
     action='store',
@@ -54,8 +54,7 @@ parser.add_argument(
     metavar='CANBUS_CHANNEL',
     default=0,
     type=int,
-    help="CANbus channel to be used"
-)
+    help="CANbus channel to be used")
 parser.add_argument(
     '--canbus_id',
     action='store',
@@ -63,8 +62,7 @@ parser.add_argument(
     metavar='CANBUS_ID',
     default=0,
     type=int,
-    help="CANbus frame ID to be used"
-)
+    help="CANbus frame ID to be used")
 parser.add_argument(
     '--timeout',
     action='store',
@@ -101,6 +99,13 @@ group.add_argument(
     dest='newapp',
     default=None,
     help="Fail instead of flashing an image with a different application ID")
+
+parser.add_argument(
+    'logging_config',
+    action='store',
+    type=argparse.FileType(mode='r'),
+    nargs='?',
+    help="Python logging configuration file")
 
 parser.add_argument(
     'image',
@@ -169,7 +174,7 @@ class BootloaderHost(object):
         self.verify_row_ranges(data)
         print ("Checking metadata")
         self.check_metadata(data, downgrade, newapp)
-        #input ("About to write rows")
+        print ("Starting flash operation")
         self.write_rows(data)
         if not self.session.verify_checksum():
             raise BootloaderError("Flash checksum does not verify! Aborting.")
@@ -262,6 +267,14 @@ class BootloaderHost(object):
 
 def main():
     args = parser.parse_args()
+
+    if (args.logging_config):
+        import sys
+        import logging
+        import logging.config
+        logging.config.fileConfig(args.logging_config)
+
+    t0 = time.perf_counter()
     data = cyacd.BootloaderData.read(args.image)
     session = make_session(args, data.checksum_type)
     bl = BootloaderHost(session, sys.stdout)
@@ -276,8 +289,11 @@ def main():
                 "Device app ID %d is different from local app ID %d. Flash anyway? (Y/N)"))
     except (protocol.BootloaderError, BootloaderError) as e:
         print ("Unhandled error: {}".format(e))
-        sys.exit(1)
+        return 1
+    t1 = time.perf_counter()
+    print ("Total running time {0:02.2f}s".format(t1-t0))
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
