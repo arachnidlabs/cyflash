@@ -1,3 +1,4 @@
+import codecs
 import struct
 import time
 
@@ -67,7 +68,11 @@ class BootloaderResponse(object):
     ]}
 
     def __init__(self, data):
-        for arg, value in zip(self.ARGS, struct.unpack(self.FORMAT, data)):
+        try:
+            unpacked = struct.unpack(self.FORMAT, data)
+        except struct.error as e:
+            raise InvalidPacketError("Cannot unpack packet data '{}': {}".format(data, e))
+        for arg, value in zip(self.ARGS, unpacked):
             if arg:
                 setattr(self, arg, value)
 
@@ -108,7 +113,7 @@ class BootloaderCommand(object):
     def __init__(self, **kwargs):
         for arg in kwargs:
             if arg not in self.ARGS:
-                raise TypeError("Argument %d not in command arguments" % (arg,))
+                raise TypeError("Argument {} not in command arguments".format(arg))
         self.args = [kwargs[arg] for arg in self.ARGS]
 
     @property
@@ -209,7 +214,8 @@ class ExitBootloaderCommand(BootloaderCommand):
 
 
 class GetMetadataResponse(BootloaderResponse):
-    FORMAT = "<BIIIxxxxxxxBBHHHxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    # TODO: metadata format differs in PSOC3 and 4/5
+    FORMAT = "<BIII7xBBHHH28x"
     ARGS = (
         "checksum",
         "bootloadable_addr",
@@ -294,6 +300,7 @@ class CANbusTransport(object):
         self.transport = transport
         self.frame_id = frame_id
         self.timeout = timeout
+        self._last_sent_frame = None
 
     def send(self, data):
         start = 0
@@ -314,16 +321,22 @@ class CANbusTransport(object):
                     data=data[start:]
                 )
             
+            # Flush input mailbox(es)
+            while (self.transport.recv(timeout=0)):
+                pass
+
             self.transport.send(msg)
+            self._last_sent_frame = msg
             while (True):
                 frame = self.transport.recv(self.timeout)
                 if (not frame):
                     raise TimeoutError("Did not receive echo frame within {} timeout".format(self.timeout))
+                # Don't check the frame arbitration ID, it may be used for varying purposes
                 if (frame.data[:frame.dlc] != msg.data[:msg.dlc]):
                     continue
+                # Ok, got a good frame
                 break
             start += 8
-            time.sleep(0.05)
 
     def recv(self):
         # Response packets read from the Bootloader have the following structure:
@@ -333,24 +346,28 @@ class CANbusTransport(object):
         # Data: N bytes of data
         # Checksum: 2 bytes
         # End of Packet (0x17): 1 byte
+        
         data = bytearray()
         # Read first frame, contains data length
-        while (True):
-            frame = self.transport.recv(self.timeout)
-            if (not frame):
-                raise TimeoutError("Timed out waiting for Bootloader 1st response frame")
+        frame = self.transport.recv(self.timeout)
+        if (not frame):
+            raise TimeoutError("Timed out waiting for Bootloader 1st response frame")
+
+        # Don't check the frame arbitration ID, it may be used for varying purposes
+
+        # Maybe there's some sort of "broadcast" in place so that the previously sent
+        # frame has generated a bunch of echoes. Filtering them out before trying
+        # to decode the real response
+        #if (frame.data[:frame.dlc] == self._last_sent_frame.data[:self._last_sent_frame.dlc]):
+        #    continue
+
+        if len(frame.data) < 4:
+            raise TimeoutError("Unexpected response data: length {}, minimum is 4".format(len(frame.data)))
             
-            if (frame.arbitration_id != self.frame_id):
-                # Got a frame from another device, ignore
-                continue
-            
-            if len(frame.data) < 4:
-                raise TimeoutError("Unexpected response data: length {}, minimum is 4".format(len(frame.data)))
-            
-            if (frame.data[0] != 0x01):
-                raise TimeoutError("Unexpected start of frame data: 0x{0:02X}, expected 0x01".format(frame.data[0]))
-            data += frame.data[:frame.dlc]
-            break
+        if (frame.data[0] != 0x01):
+            raise TimeoutError("Unexpected start of frame data: 0x{0:02X}, expected 0x01".format(frame.data[0]))
+
+        data += frame.data[:frame.dlc]
         
         # 4 initial bytes, reported size, 3 tail
         total_size = 4 + (struct.unpack("<H", data[2:4])[0]) + 3
