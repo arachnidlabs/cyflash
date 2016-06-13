@@ -36,3 +36,11 @@ and --newapp and --nonewapp, respectively.
 
 Cyflash is still quite new, and should be considered beta-quality software.
 Pull requests and bug reports are most welcome.
+
+
+Cypres Bootloader metadata component bug
+========================================
+Bootloader component v1.40 and 1.50 have a bug that prevents the GET_METADATA
+command to work correctly. The #define Bootloader_RSP_SIZE_GET_METADATA (0x56u)
+in Bootloader_PVT.h should be #define Bootloader_RSP_SIZE_GET_METADATA (56u)
+Version 1.60 should resolve this issue
