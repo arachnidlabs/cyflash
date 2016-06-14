@@ -27,7 +27,7 @@ class BootloaderRow(object):
         checksum = data[-1]
         # Python2, see above
         #data_checksum = 0x100 - (sum(ord(x) for x in data[:-1]) & 0xFF)
-        data_checksum = 0x100 - (sum(x for x in data[:-1]) & 0xFF)
+        data_checksum = 0x100 - (sum(data[:-1]) & 0xFF)
         if data_checksum == 0x100:
             data_checksum = 0
         if checksum != data_checksum:
