@@ -168,13 +168,13 @@ class BootloaderHost(object):
 		self.row_ranges = {}
 
 	def bootload(self, data, downgrade, newapp):
-		print ("Entering bootload")
+		self.out.write("Entering bootload.\n")
 		self.enter_bootloader(data)
-		print ("Verifying row ranges")
+		self.out.write("Verifying row ranges.\n")
 		self.verify_row_ranges(data)
-		print ("Checking metadata")
+		self.out.write("Checking metadata.\n")
 		self.check_metadata(data, downgrade, newapp)
-		print ("Starting flash operation")
+		self.out.write("Starting flash operation.\n")
 		self.write_rows(data)
 		if not self.session.verify_checksum():
 			raise BootloaderError("Flash checksum does not verify! Aborting.")
