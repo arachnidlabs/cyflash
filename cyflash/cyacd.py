@@ -63,7 +63,7 @@ class BootloaderData(object):
             header = hex_decoder(f.readline().strip())[0]
 
         if len(header) != 6:
-            raise ValueError("Expected 12 byte header line first")
+            raise ValueError("Expected 12 byte header line first, firmware file may be corrupt.")
         self = cls()
         self.silicon_id, self.silicon_rev, self.checksum_type = struct.unpack('>LBB', header)
         for i, line in enumerate(f):
