@@ -279,7 +279,6 @@ def main():
 	args = parser.parse_args()
 
 	if (args.logging_config):
-		import sys
 		import logging
 		import logging.config
 		logging.config.fileConfig(args.logging_config)
