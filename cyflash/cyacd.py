@@ -1,4 +1,5 @@
 import codecs
+import six
 import struct
 
 hex_decoder = codecs.getdecoder('hex')
@@ -14,20 +15,20 @@ class BootloaderRow(object):
         self = cls()
         if data[0] != ':':
             raise ValueError("Bootloader rows must start with a colon")
-        # Python2
-        #data = data[1:].decode('hex')
         data = hex_decoder(data[1:])[0]
         self.array_id, self.row_number, data_length = struct.unpack('>BHH', data[:5])
         self.data = data[5:-1]
         if len(self.data) != data_length:
             raise ValueError("Row specified %d bytes of data, but got %d"
                              % (data_length, len(self.data)))
-        # Python2. data is already a bytes object in Py3
-        #(checksum,) = struct.unpack('B', data[-1])
-        checksum = data[-1]
-        # Python2, see above
-        #data_checksum = 0x100 - (sum(ord(x) for x in data[:-1]) & 0xFF)
-        data_checksum = 0x100 - (sum(data[:-1]) & 0xFF)
+        # data is already a bytes object in Py3
+        if (six.PY2):
+            (checksum,) = struct.unpack('B', data[-1])
+            data_checksum = 0x100 - (sum(ord(x) for x in data[:-1]) & 0xFF)
+        elif (six.PY3):
+            checksum = data[-1]
+            data_checksum = 0x100 - (sum(data[:-1]) & 0xFF)
+
         if data_checksum == 0x100:
             data_checksum = 0
         if checksum != data_checksum:
@@ -39,7 +40,9 @@ class BootloaderRow(object):
     def checksum(self):
         """Returns the data checksum. Should match what the bootloader returns."""
         # Python2
-        # return 0xFF & (1 + ~sum(ord(x) for x in self.data))
+        if (six.PY2):
+            return 0xFF & (1 + ~sum(ord(x) for x in self.data))
+
         return (1 + ~sum(self.data)) & 0xFF
 
 
@@ -53,10 +56,12 @@ class BootloaderData(object):
 
     @classmethod
     def read(cls, f):
-        # Works in python3, header is a bytes instance
-        header = hex_decoder(f.readline().strip())[0]
-        # Works in python2
-        #header = f.readline().strip().decode('hex')
+        if (six.PY2):
+            header = f.readline().strip().decode('hex')
+        elif (six.PY3):
+            # header is a bytes instance
+            header = hex_decoder(f.readline().strip())[0]
+
         if len(header) != 6:
             raise ValueError("Expected 12 byte header line first")
         self = cls()
