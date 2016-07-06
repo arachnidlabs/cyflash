@@ -1,4 +1,5 @@
 import codecs
+import six
 import struct
 import time
 
@@ -81,7 +82,7 @@ class BootloaderResponse(object):
         start, status, length = struct.unpack("<BBH", data[:4])
         if start != 0x01:
             raise InvalidPacketError("Expected Start Of Packet signature 0x01, found 0x{0:01X}".format(start))
-        
+
         expected_dlen = len(data) - 7
         if length != expected_dlen:
             raise InvalidPacketError("Expected packet data length {} actual {}".format(length, expected_dlen))
@@ -296,10 +297,12 @@ class SerialTransport(object):
 class CANbusTransport(object):
     MESSAGE_CLASS = None
 
-    def __init__(self, transport, frame_id, timeout):
+    def __init__(self, transport, frame_id, timeout, echo_frames, wait_send_ms):
         self.transport = transport
         self.frame_id = frame_id
         self.timeout = timeout
+        self.echo_frames = echo_frames
+        self.wait_send_s = wait_send_ms / 1000.0
         self._last_sent_frame = None
 
     def send(self, data):
@@ -307,7 +310,7 @@ class CANbusTransport(object):
         maxlen = len(data)
         while (start < maxlen):
             remaining = maxlen - start
-            
+
             if (remaining > 8):
                 msg = self.MESSAGE_CLASS(
                     extended_id=False,
@@ -320,22 +323,27 @@ class CANbusTransport(object):
                     arbitration_id=self.frame_id,
                     data=data[start:]
                 )
-            
+
             # Flush input mailbox(es)
             while (self.transport.recv(timeout=0)):
                 pass
 
             self.transport.send(msg)
             self._last_sent_frame = msg
-            while (True):
-                frame = self.transport.recv(self.timeout)
-                if (not frame):
-                    raise TimeoutError("Did not receive echo frame within {} timeout".format(self.timeout))
-                # Don't check the frame arbitration ID, it may be used for varying purposes
-                if (frame.data[:frame.dlc] != msg.data[:msg.dlc]):
-                    continue
-                # Ok, got a good frame
-                break
+            if (self.echo_frames):
+                # Read back the echo message
+                while (True):
+                    frame = self.transport.recv(self.timeout)
+                    if (not frame):
+                        raise TimeoutError("Did not receive echo frame within {} timeout".format(self.timeout))
+                    # Don't check the frame arbitration ID, it may be used for varying purposes
+                    if (frame.data[:frame.dlc] != msg.data[:msg.dlc]):
+                        continue
+                    # Ok, got a good frame
+                    break
+            elif (self.wait_send_s > 0.0):
+                time.sleep(self.wait_send_s)
+
             start += 8
 
     def recv(self):
@@ -346,7 +354,7 @@ class CANbusTransport(object):
         # Data: N bytes of data
         # Checksum: 2 bytes
         # End of Packet (0x17): 1 byte
-        
+
         data = bytearray()
         # Read first frame, contains data length
         frame = self.transport.recv(self.timeout)
@@ -355,33 +363,27 @@ class CANbusTransport(object):
 
         # Don't check the frame arbitration ID, it may be used for varying purposes
 
-        # Maybe there's some sort of "broadcast" in place so that the previously sent
-        # frame has generated a bunch of echoes. Filtering them out before trying
-        # to decode the real response
-        #if (frame.data[:frame.dlc] == self._last_sent_frame.data[:self._last_sent_frame.dlc]):
-        #    continue
-
         if len(frame.data) < 4:
             raise TimeoutError("Unexpected response data: length {}, minimum is 4".format(len(frame.data)))
-            
+
         if (frame.data[0] != 0x01):
             raise TimeoutError("Unexpected start of frame data: 0x{0:02X}, expected 0x01".format(frame.data[0]))
 
         data += frame.data[:frame.dlc]
-        
+
         # 4 initial bytes, reported size, 3 tail
         total_size = 4 + (struct.unpack("<H", data[2:4])[0]) + 3
         while (len(data) < total_size):
             frame = self.transport.recv(self.timeout)
             if (not frame):
                 raise TimeoutError("Timed out waiting for Bootloader response frame")
-            
+
             if (frame.arbitration_id != self.frame_id):
                 # Got a frame from another device, ignore
                 continue
-            
+
             data += frame.data[:frame.dlc]
-        
+
         return data
 
 def crc16_checksum(data):
@@ -400,4 +402,7 @@ def crc16_checksum(data):
     return ~crc & 0xffff
 
 def sum_2complement_checksum(data):
-    return (1 + ~sum(data)) & 0xFFFF
+    if (type(data) is str):
+        return (1 + ~sum([ord(c) for c in data])) & 0xFFFF
+    elif (type(data) in (bytearray, bytes)):
+        return (1 + ~sum(data)) & 0xFFFF
