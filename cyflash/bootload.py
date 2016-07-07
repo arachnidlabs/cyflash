@@ -10,8 +10,6 @@ import time
 import six
 import sys
 
-from builtins import input
-
 from . import cyacd
 from . import protocol
 
@@ -174,7 +172,10 @@ def seek_permission(default, message):
 	else:
 		def prompt(*args):
 			while True:
-				result = input(message % args)
+				if six.PY3:
+					result = input(message % args)
+				else:
+					result = raw_input(message % args)
 				if result.lower().startswith('y'):
 					return True
 				elif result.lower().startswith('n'):
