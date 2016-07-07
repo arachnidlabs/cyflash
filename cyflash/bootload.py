@@ -64,20 +64,23 @@ parser.add_argument(
 	default=0,
 	type=int,
 	help="CANbus frame ID to be used")
-parser.add_argument(
+
+group = parser.add_mutually_exclusive_group(required=True)
+group.add_argument(
 	'--canbus_echo',
 	action='store_true',
 	dest='canbus_echo',
 	default=False,
-	help="Echo back received CAN frames to keep the host in sync")
-parser.add_argument(
+	help="Use echoed back received CAN frames to keep the host in sync")
+group.add_argument(
 	'--canbus_wait',
 	action='store',
 	dest='canbus_wait',
 	metavar='CANBUS_WAIT',
-	default=3,
+	default=5,
 	type=int,
 	help="Wait for CANBUS_WAIT ms amount of time after sending a frame if you're not using echo frames as a way to keep host in sync")
+
 parser.add_argument(
 	'--timeout',
 	action='store',
@@ -264,7 +267,6 @@ class BootloaderHost(object):
 						"Checksum does not match in array %d row %d. Expected %.2x, got %.2x! Aborting." % (
 							array_id, row_number, row.checksum, actual_checksum))
 				self.progress("Uploading data", i, total)
-				self.out.write(" - array {} row {}, {} data bytes".format(array_id, row_number, len(row.data)))
 			self.progress()
 
 	def progress(self, message=None, current=None, total=None):
