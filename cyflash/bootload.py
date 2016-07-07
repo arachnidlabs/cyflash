@@ -10,6 +10,8 @@ import time
 import six
 import sys
 
+from builtins import input
+
 from . import cyacd
 from . import protocol
 
@@ -172,7 +174,7 @@ def seek_permission(default, message):
 	else:
 		def prompt(*args):
 			while True:
-				result = raw_input(message % args)
+				result = input(message % args)
 				if result.lower().startswith('y'):
 					return True
 				elif result.lower().startswith('n'):
@@ -245,7 +247,7 @@ class BootloaderHost(object):
 			message = "Device application version is v%d.%d, but local application version is v%d.%d." % (
 				metadata.app_version >> 8, metadata.app_version & 0xFF,
 				local_metadata.app_version >> 8, local_metadata.app_version & 0xFF)
-			if not downgrade(metadata.app_version, loca_metadata.app_version):
+			if not downgrade(metadata.app_version, local_metadata.app_version):
 				raise ValueError(message + " Aborting.")
 
 		if metadata.app_id != local_metadata.app_id:
