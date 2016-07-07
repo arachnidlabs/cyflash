@@ -1,14 +1,35 @@
 /** \file
+ *  
+ *  This file implements the Cypress bootloader transport interface
+ *  on raw standard (11bit IDs) CANbus frames.
+ *  The CANbus component should be named "CAN", no interrupts, all
+ *  mboxes configured as basic.
+ *  The Bootloader component needs to be configured on "custom interface"
+ *  communication component, since I'm too lazy to implement the remaining
+ *  bells & whistles.
+ *  If you want to update specific devices on the bus, define
+ *  CHECK_DEVICE_CANBUS_ID and place the relevant ID in the external
+ *  CANbus_ID variable. In this case you can also define a "broadcast" id with
+ *  CANBUS_BROADCAST_ID.
+ *  If neither are defined all incoming frames are used.
+ *  By default the frame is just read from CANbus and passed up.
+ *  Optionally you can define ECHO_CANBUS_FRAMES in order to echo back the read
+ *  frame on the bus using own device ID. Useful if you are updating a single
+ *  device at a time and want to keep the bootloader
+ *  host in sync.
+ *  
+ *  \author Giuseppe Corbelli <giuseppe.corbelli@weightpack.com>
+ *  \author Weightpack SRL - http://www.weightpack.com
+ *  \copyright GNU Public License V3
  *
  *  SVN ID: $Id$
  */
 
 #include <cytypes.h>
+
 #include <CAN.h>
 
-#define BROADCAST_ID 0x7FF
-
-// How much do we wait between mailboxes checks
+/** How much do we wait between mailboxes checks */
 #define WAIT_STEP_MS    1u
 
 /** Check if an RX mailbox is full */
@@ -66,29 +87,7 @@ void CyBtldrCommReset(void)
     CAN_Start();
 }
 
-/*******************************************************************************
-* Function Name: CyBtldrCommWrite
-********************************************************************************
-*
-* Summary:
-*  Allows the caller to write data to the boot loader host. This function uses
-* a blocking write function for writing data using CAN communication component.
-*
-* Parameters:
-*  data:    A pointer to the block of data to send to the device
-*  size:     The number of bytes to write.
-*  count:    Pointer to an unsigned short variable to write the number of
-*             bytes actually written.
-*  timeOut:  Number of units to wait before returning because of a timeout.
-*
-* Return:
-*   cystatus: CYRET_SUCCESS if one or more bytes were successfully written. CYRET_TIMEOUT if the
-*             host controller did not respond to the write in 10 milliseconds * timeOut milliseconds.
-*
-* Side Effects:
-*  This function should be called after command was received .
-*
-*******************************************************************************/
+/** Write a packet to basic TX mailbox 0 */
 cystatus CyBtldrCommWrite(uint8* buffer, uint16 size, uint16* count, uint8 timeout)
 {
     CAN_TX_MSG msg;
@@ -103,6 +102,8 @@ cystatus CyBtldrCommWrite(uint8* buffer, uint16 size, uint16* count, uint8 timeo
         return CYRET_TIMEOUT;
     
     // For sake of simplicity we're using just mailbox 0
+    // Besides, we prefer to go slow and safe and make sure
+    // no outgoing messages are overlapping (in terms of priorities)
     // Make sure it's a basic mailbox
     CYASSERT((CAN_TX_MAILBOX_TYPE & 0x01) == 0u);
     
@@ -121,8 +122,9 @@ cystatus CyBtldrCommWrite(uint8* buffer, uint16 size, uint16* count, uint8 timeo
         }
     } while (timeout_ms >= 0);
 
-    if (timeout_ms < 0)
+    if (timeout_ms < 0) {
         return CYRET_TIMEOUT;
+    }
     
     // Ok, mailbox is free
     while ((pointer < size) && (timeout_ms >= 0)) {
@@ -170,8 +172,9 @@ cystatus CyBtldrCommWrite(uint8* buffer, uint16 size, uint16* count, uint8 timeo
         } while (CAN_TX_MAILBOX_IS_FULL(0) && (CAN_GetErrorState() == 0) && (timeout_ms >= 0));
     }
     
-    if (timeout_ms < 0)
+    if (timeout_ms < 0) {
         return CYRET_TIMEOUT;
+    }
     
     // Useless as of bootloader v1.5
     *count = size;
@@ -180,7 +183,7 @@ cystatus CyBtldrCommWrite(uint8* buffer, uint16 size, uint16* count, uint8 timeo
     return (result == 0) ? CYRET_SUCCESS : CYRET_TIMEOUT;
 }
 
-/** Read a packet from a basic RX mailbox (FIFO) and echo it back before returning */
+/** Read a packet from a basic RX mailbox (FIFO) and optionally echo it back before returning */
 cystatus CyBtldrCommRead(uint8* buffer, uint16 size, uint16* count, uint8 timeout)
 {
     int16 timeout_ms = 10 * timeout;
@@ -190,10 +193,19 @@ cystatus CyBtldrCommRead(uint8* buffer, uint16 size, uint16* count, uint8 timeou
     uint8 full_mailboxes = 0;
     uint8 dlc;
     uint8 bswap_dest[] = {3u, 2u, 1u, 0u, 7u, 6u, 5u, 4u};
+#if (CY_PSOC3)
+    bit got_sop;
+    bit got_eop;
+#else
+    uint8 got_sop;
+    uint8 got_eop;
+#endif
     
     *count = 0;
     if (size == 0)
         return CYRET_SUCCESS;
+    
+    memset(buffer, 0, size);
     
     // Make sure we have room in the buffer to accomodate a full CAN frame
     // Buffer should be 300 bytes, see Bootloader_SIZEOF_COMMAND_BUFFER
@@ -221,13 +233,20 @@ cystatus CyBtldrCommRead(uint8* buffer, uint16 size, uint16* count, uint8 timeou
                 // No message, check next mailbox
                 continue;
             }
-            
+
+#ifdef CHECK_DEVICE_CANBUS_ID
             frame_id = (CY_GET_REG32((reg32 *) (&CAN_RX->rxid)) >> CAN_SET_TX_ID_STANDARD_MSG_SHIFT);
-            if ((frame_id != CANbus_ID) && (frame_id != BROADCAST_ID)) {
+            if ((frame_id != CANbus_ID)
+#   ifdef CANBUS_BROADCAST_ID
+                && (frame_id != CANBUS_BROADCAST_ID)
+#   endif // CANBUS_BROADCAST_ID
+            )
+            {
                 CAN_RX_MAILBOX_FREE(mailbox);
                 continue;  // Message for another recipient, next mbox
             }
-            
+#endif
+
             full_mailboxes++;
             
             dlc = CAN_RX[mailbox].rxcmd.byte[2u] & 0x0F;
@@ -243,16 +262,30 @@ cystatus CyBtldrCommRead(uint8* buffer, uint16 size, uint16* count, uint8 timeou
                 buffer[*count + copied] = CAN_RX[mailbox].rxdata.byte[bswap_dest[copied]];
             }
             CAN_RX_MAILBOX_FREE(mailbox);
+
+#ifdef ECHO_CANBUS_FRAMES
             // Send back what we have just received
             CyBtldrCommWrite(buffer+(*count), dlc, &copied, 0);
+#endif  // ECHO_CANBUS_FRAMES
+
             *count += dlc;
             
             // Check if the high level packet is completed, so we can stop
             // the reading loop without waiting for timeout
-            if ((*count > 0) && (buffer[0] == 0x01)) {
-                // Got start of packet
-                if ((*count > *(uint16*)(buffer+2)) && (buffer[(*count)-1] == 0x17))
-                    return CYRET_SUCCESS;  // Got end of packet and reasonable length
+
+            // Reuse variable, data length field in packet
+            copied = *(uint16*)(buffer+2);
+#ifdef CY_PSOC3
+            copied = CYSWAP_ENDIAN16(copied);
+#endif
+            got_sop = (buffer[0] == 0x01);
+            got_eop = (buffer[(*count)-1] == 0x17);
+            // Got start and end of packet, check that we have
+            // SOP + command + 2 bytes data length + payload + 2 bytes checksum + eop
+            // Reuse variable
+            frame_id = 1 + 1 + 2 + copied + 2 + 1;
+            if ((*count == frame_id) && (got_sop) && (got_eop)) {
+                return CYRET_SUCCESS;
             }
             
         }  // for mailboxes loop -------------------------------------------------
@@ -264,10 +297,12 @@ cystatus CyBtldrCommRead(uint8* buffer, uint16 size, uint16* count, uint8 timeou
         }
     } while (timeout_ms >= 0);
 
-    if (*count > 0)
+    got_sop = (buffer[0] == 0x01);
+    got_eop = (buffer[(*count)-1] == 0x17);
+    frame_id = 1 + 1 + 2 + copied + 2 + 1;
+    if ((*count == frame_id) && (got_sop) && (got_eop)) {
         return CYRET_SUCCESS;
+    }
     
     return CYRET_TIMEOUT;
 }
-
-/* [] END OF FILE */
