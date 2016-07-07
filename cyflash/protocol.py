@@ -399,7 +399,8 @@ def crc16_checksum(data):
     crc = 0xffff
 
     for b in data:
-        b = ord(b)
+        if not isinstance(b, int):
+            b = ord(b)
         for i in range(8):
             if (crc & 1) ^ (b & 1):
                 crc = (crc >> 1) ^ 0x8408
