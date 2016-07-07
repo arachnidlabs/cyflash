@@ -36,3 +36,17 @@ and --newapp and --nonewapp, respectively.
 
 Cyflash is still quite new, and should be considered beta-quality software.
 Pull requests and bug reports are most welcome.
+
+
+Cypress Bootloader metadata component bug
+=========================================
+Bootloader component v1.40 and 1.50 have a bug that prevents the GET_METADATA
+command to work correctly. The #define Bootloader_RSP_SIZE_GET_METADATA (0x56u)
+in Bootloader_PVT.h should be #define Bootloader_RSP_SIZE_GET_METADATA (56u)
+Version 1.60 should resolve this issue
+
+CANbus as transport
+===================
+cyflash can use raw CANbus frames as transport with the python-can library.
+On the target side please see the CANbus_Bootloader.c file that implements
+the Cypress boodloader communication interface.

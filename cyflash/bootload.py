@@ -1,10 +1,13 @@
 """PSoC bootloader command line tool."""
 
 
-__version__ = "1.05"
+__version__ = "1.06"
 
 
 import argparse
+import codecs
+import time
+import six
 import sys
 
 from . import cyacd
@@ -21,6 +24,13 @@ group.add_argument(
 	metavar='PORT',
 	default=None,
 	help="Use a serial interface")
+group.add_argument(
+	'--canbus',
+	action='store',
+	dest='canbus',
+	metavar='BUSTYPE',
+	default=None,
+	help="Use a CANbus interface (requires python-can)")
 
 parser.add_argument(
 	'--serial_baudrate',
@@ -30,6 +40,47 @@ parser.add_argument(
 	default=115200,
 	type=int,
 	help="Baud rate to use when flashing using serial (default 115200)")
+parser.add_argument(
+	'--canbus_baudrate',
+	action='store',
+	dest='canbus_baudrate',
+	metavar='BAUD',
+	default=125000,
+	type=int,
+	help="Baud rate to use when flashing using CANbus (default 125000)")
+parser.add_argument(
+	'--canbus_channel',
+	action='store',
+	dest='canbus_channel',
+	metavar='CANBUS_CHANNEL',
+	default=0,
+	type=int,
+	help="CANbus channel to be used")
+parser.add_argument(
+	'--canbus_id',
+	action='store',
+	dest='canbus_id',
+	metavar='CANBUS_ID',
+	default=0,
+	type=int,
+	help="CANbus frame ID to be used")
+
+group = parser.add_mutually_exclusive_group(required=True)
+group.add_argument(
+	'--canbus_echo',
+	action='store_true',
+	dest='canbus_echo',
+	default=False,
+	help="Use echoed back received CAN frames to keep the host in sync")
+group.add_argument(
+	'--canbus_wait',
+	action='store',
+	dest='canbus_wait',
+	metavar='CANBUS_WAIT',
+	default=5,
+	type=int,
+	help="Wait for CANBUS_WAIT ms amount of time after sending a frame if you're not using echo frames as a way to keep host in sync")
+
 parser.add_argument(
 	'--timeout',
 	action='store',
@@ -68,6 +119,13 @@ group.add_argument(
 	help="Fail instead of flashing an image with a different application ID")
 
 parser.add_argument(
+	'logging_config',
+	action='store',
+	type=argparse.FileType(mode='r'),
+	nargs='?',
+	help="Python logging configuration file")
+
+parser.add_argument(
 	'image',
 	action='store',
 	type=argparse.FileType(mode='r'),
@@ -75,6 +133,7 @@ parser.add_argument(
 
 
 checksum_types = {
+	0: protocol.sum_2complement_checksum,
 	1: protocol.crc16_checksum,
 }
 
@@ -89,6 +148,13 @@ def make_session(args, checksum_type):
 		ser.flushInput()		# need to clear any garbage off the serial port
 		ser.flushOutput()
 		transport = protocol.SerialTransport(ser)
+	elif args.canbus:
+		import can
+		# Remaining configuration options should follow python-can practices
+		canbus = can.interface.Bus(bustype=args.canbus, channel=args.canbus_channel, bitrate=args.canbus_baudrate)
+		# Wants timeout in ms, we have it in s
+		transport = protocol.CANbusTransport(canbus, args.canbus_id, int(args.timeout * 1000), args.canbus_echo, args.canbus_wait)
+		transport.MESSAGE_CLASS = can.Message
 	else:
 		raise BootloaderError("No valid interface specified")
 
@@ -120,9 +186,13 @@ class BootloaderHost(object):
 		self.row_ranges = {}
 
 	def bootload(self, data, downgrade, newapp):
+		self.out.write("Entering bootload.\n")
 		self.enter_bootloader(data)
+		self.out.write("Verifying row ranges.\n")
 		self.verify_row_ranges(data)
+		self.out.write("Checking metadata.\n")
 		self.check_metadata(data, downgrade, newapp)
+		self.out.write("Starting flash operation.\n")
 		self.write_rows(data)
 		if not self.session.verify_checksum():
 			raise BootloaderError("Flash checksum does not verify! Aborting.")
@@ -132,7 +202,7 @@ class BootloaderHost(object):
 		self.session.exit_bootloader()
 
 	def verify_row_ranges(self, data):
-		for array_id, array in data.arrays.iteritems():
+		for array_id, array in six.iteritems(data.arrays):
 			start_row, end_row = self.session.get_flash_size(array_id)
 			self.out.write("Array %d: first row %d, last row %d.\n" % (
 				array_id, start_row, end_row))
@@ -162,6 +232,9 @@ class BootloaderHost(object):
 		except protocol.InvalidApp:
 			self.out.write("No valid application on device.\n")
 			return
+		except protocol.BootloaderError as e:
+			self.out.write("Cannot read metadata from device: {}\n".format(e))
+			return
 
 		# TODO: Make this less horribly hacky
 		# Fetch from last row of last flash array
@@ -184,8 +257,8 @@ class BootloaderHost(object):
 	def write_rows(self, data):
 		total = sum(len(x) for x in data.arrays.values())
 		i = 0
-		for array_id, array in data.arrays.iteritems():
-			for row_number, row in array.iteritems():
+		for array_id, array in six.iteritems(data.arrays):
+			for row_number, row in array.items():
 				i += 1
 				self.session.program_row(array_id, row_number, row.data)
 				actual_checksum = self.session.get_row_checksum(array_id, row_number)
@@ -206,6 +279,16 @@ class BootloaderHost(object):
 
 def main():
 	args = parser.parse_args()
+
+	if (args.logging_config):
+		import logging
+		import logging.config
+		logging.config.fileConfig(args.logging_config)
+
+	if (six.PY3):
+		t0 = time.perf_counter()
+	else:
+		t0 = time.clock()
 	data = cyacd.BootloaderData.read(args.image)
 	session = make_session(args, data.checksum_type)
 	bl = BootloaderHost(session, sys.stdout)
@@ -218,10 +301,16 @@ def main():
 			seek_permission(
 				args.newapp,
 				"Device app ID %d is different from local app ID %d. Flash anyway? (Y/N)"))
-	except (protocol.BootloaderError, BootloaderError), e:
-		print e.message
-		sys.exit(1)
+	except (protocol.BootloaderError, BootloaderError) as e:
+		print ("Unhandled error: {}".format(e))
+		return 1
+	if (six.PY3):
+		t1 = time.perf_counter()
+	else:
+		t1 = time.clock()
+	print ("Total running time {0:02.2f}s".format(t1-t0))
+	return 0
 
 
 if __name__ == '__main__':
-	main()
+	sys.exit(main())

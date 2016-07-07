@@ -1,0 +1,28 @@
+[loggers]
+keys=root,can
+
+[handlers]
+keys=fileHandler
+
+[formatters]
+keys=basicFormatter
+
+[logger_root]
+level=DEBUG
+handlers=
+
+[logger_can]
+level=DEBUG
+handlers=fileHandler
+qualname=can
+
+[handler_fileHandler]
+class=handlers.RotatingFileHandler
+formatter=basicFormatter
+level=DEBUG
+args=('can.log', 'a', 10*1024*1024, 10)
+
+[formatter_basicFormatter]
+class=logging.Formatter
+format=%(asctime)s.%(msecs)03d|%(levelname)-8s|%(name)s|%(filename)s:%(lineno)d|%(message)s
+datefmt=%Y-%m-%d %H:%M:%S

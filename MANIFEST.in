@@ -1,1 +1,4 @@
 include README.md
+include logging.conf.example
+recursive-include cyflash *.py
+recursive-include PSOC *.c
