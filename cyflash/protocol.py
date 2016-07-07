@@ -378,7 +378,7 @@ class CANbusTransport(object):
             if (not frame):
                 raise TimeoutError("Timed out waiting for Bootloader response frame")
 
-            if (frame.arbitration_id != self.frame_id):
+            if (self.echo_frames) and (frame.arbitration_id != self.frame_id):
                 # Got a frame from another device, ignore
                 continue
 
