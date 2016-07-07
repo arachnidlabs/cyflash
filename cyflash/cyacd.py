@@ -4,6 +4,7 @@ import struct
 
 hex_decoder = codecs.getdecoder('hex')
 
+
 class BootloaderRow(object):
     def __init__(self):
         self.array_id = None

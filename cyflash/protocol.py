@@ -3,6 +3,7 @@ import six
 import struct
 import time
 
+
 class InvalidPacketError(Exception):
     pass
 
@@ -17,18 +18,21 @@ class TimeoutError(BootloaderError):
 
 class IncorrectLength(BootloaderError):
     STATUS = 0x03
+
     def __init__(self):
         super().__init__("The amount of data available is outside the expected range")
 
 
 class InvalidData(BootloaderError):
     STATUS = 0x04
+
     def __init__(self):
         super().__init__("The data is not of the proper form")
 
 
 class InvalidCommand(BootloaderError):
     STATUS = 0x05
+
     def __init__(self):
         super().__init__("Command unsupported on target device")
 
@@ -88,12 +92,13 @@ class BootloaderResponse(object):
             raise InvalidPacketError("Expected packet data length {} actual {}".format(length, expected_dlen))
 
         checksum, end = struct.unpack("<HB", data[-3:])
-        data = data[:length+4]
+        data = data[:length + 4]
         if end != 0x17:
             raise InvalidPacketError("Invalid end of packet code 0x{0:02X}, expected 0x17".format(end))
         calculated_checksum = checksum_func(data)
         if checksum != calculated_checksum:
-            raise InvalidPacketError("Invalid packet checksum 0x{0:02X}, expected 0x{1:02X}".format(checksum, calculated_checksum))
+            raise InvalidPacketError(
+                "Invalid packet checksum 0x{0:02X}, expected 0x{1:02X}".format(checksum, calculated_checksum))
 
         if (status != 0x00):
             response_class = cls.ERRORS.get(status)
@@ -104,6 +109,7 @@ class BootloaderResponse(object):
 
         data = data[4:]
         return cls(data)
+
 
 class BootloaderCommand(object):
     COMMAND = None
@@ -146,6 +152,7 @@ class GetFlashSizeCommand(BootloaderCommand):
 
 class EmptyResponse(BootloaderResponse):
     pass
+
 
 class EraseRowCommand(BootloaderCommand):
     COMMAND = 0x34
@@ -233,7 +240,7 @@ class GetMetadataResponse(BootloaderResponse):
 class GetMetadataCommand(BootloaderCommand):
     COMMAND = 0x3C
     FORMAT = "<B"
-    ARGS = ("application_id", )
+    ARGS = ("application_id",)
     RESPONSE = GetMetadataResponse
 
 
@@ -294,6 +301,7 @@ class SerialTransport(object):
             raise TimeoutError("Timed out waiting for Bootloader response.")
         return data
 
+
 class CANbusTransport(object):
     MESSAGE_CLASS = None
 
@@ -315,7 +323,7 @@ class CANbusTransport(object):
                 msg = self.MESSAGE_CLASS(
                     extended_id=False,
                     arbitration_id=self.frame_id,
-                    data=data[start:start+8]
+                    data=data[start:start + 8]
                 )
             else:
                 msg = self.MESSAGE_CLASS(
@@ -386,6 +394,7 @@ class CANbusTransport(object):
 
         return data
 
+
 def crc16_checksum(data):
     crc = 0xffff
 
@@ -400,6 +409,7 @@ def crc16_checksum(data):
 
     crc = (crc << 8) | (crc >> 8)
     return ~crc & 0xffff
+
 
 def sum_2complement_checksum(data):
     if (type(data) is str):
