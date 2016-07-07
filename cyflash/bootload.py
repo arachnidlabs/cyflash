@@ -1,7 +1,5 @@
 """PSoC bootloader command line tool."""
 
-__version__ = "1.06"
-
 import argparse
 import codecs
 import time
@@ -10,6 +8,9 @@ import sys
 
 from . import cyacd
 from . import protocol
+
+
+__version__ = "1.06"
 
 parser = argparse.ArgumentParser(description="Bootloader tool for Cypress PSoC devices")
 
