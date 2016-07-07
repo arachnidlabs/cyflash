@@ -52,7 +52,6 @@ parser.add_argument(
     dest='canbus_channel',
     metavar='CANBUS_CHANNEL',
     default=0,
-    type=int,
     help="CANbus channel to be used")
 parser.add_argument(
     '--canbus_id',
