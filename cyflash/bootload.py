@@ -163,9 +163,9 @@ def make_session(args, checksum_type):
     return protocol.BootloaderSession(transport, checksum_func)
 
 
-def seek_permission(default, message):
-    if default is not None:
-        return lambda remote, local: default
+def seek_permission(argument, message):
+    if argument is not None:
+        return lambda remote, local: argument
     else:
         def prompt(*args):
             while True:
@@ -177,6 +177,8 @@ def seek_permission(default, message):
                     return True
                 elif result.lower().startswith('n'):
                     return False
+                
+        return prompt
 
 
 class BootloaderHost(object):
