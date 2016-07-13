@@ -28,7 +28,7 @@ class VerificationError(BootloaderError):
     STATUS = 0x02
 
     def __init__(self):
-        super().__init("The flash verification failed.")
+        super().__init__("The flash verification failed.")
 
 
 class IncorrectLength(BootloaderError):
