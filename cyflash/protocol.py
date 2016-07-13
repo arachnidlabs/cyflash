@@ -141,6 +141,10 @@ class BooleanResponse(BootloaderResponse):
     ARGS = ("status",)
 
 
+class EmptyResponse(BootloaderResponse):
+    pass
+
+
 class VerifyChecksumCommand(BootloaderCommand):
     COMMAND = 0x31
     RESPONSE = BooleanResponse
@@ -158,8 +162,12 @@ class GetFlashSizeCommand(BootloaderCommand):
     RESPONSE = GetFlashSizeResponse
 
 
-class EmptyResponse(BootloaderResponse):
-    pass
+# TODO: Finish implementing Get App Status command for dual app bootlaoders and in app bootloaders
+# class GetAppStatusCommand(BootloaderCommand):
+#     COMMAND = 0x33
+
+
+# class GetAppStatusResponse(BootloaderResponse):
 
 
 class EraseRowCommand(BootloaderCommand):
@@ -172,6 +180,11 @@ class EraseRowCommand(BootloaderCommand):
 class SyncBootloaderCommand(BootloaderCommand):
     COMMAND = 0x35
     RESPONSE = EmptyResponse
+
+
+# TODO: Finish implementing command to set newest app active for dual app bootloaders
+# class SetAppActive(BootloaderCommand):
+#     COMMAND = 0x36
 
 
 class SendDataCommand(BootloaderCommand):
