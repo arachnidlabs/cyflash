@@ -16,6 +16,21 @@ class BootloaderTimeoutError(BootloaderError):
     pass
 
 
+# TODO: Implement Security key functionality
+class BootloaderKeyError(BootloaderError):
+    STATUS = 0x01
+
+    def __init__(self):
+        super().__init__("The provided security key was incorrect")
+
+
+class VerificationError(BootloaderError):
+    STATUS = 0x02
+
+    def __init__(self):
+        super().__init("The flash verification failed.")
+
+
 class IncorrectLength(BootloaderError):
     STATUS = 0x03
 
@@ -37,6 +52,14 @@ class InvalidCommand(BootloaderError):
         super().__init__("Command unsupported on target device")
 
 
+class UnexpectedDevice(BootloaderError):
+    STATUS = 0x06
+
+
+class UnsupportedBootloaderVersion(BootloaderError):
+    STATUS = 0x07
+
+
 class InvalidChecksum(BootloaderError):
     STATUS = 0x08
 
@@ -49,12 +72,20 @@ class InvalidFlashRow(BootloaderError):
     STATUS = 0x0A
 
 
+class ProtectedFlash(BootloaderError):
+    STATUS = 0x0B
+
+
 class InvalidApp(BootloaderError):
     STATUS = 0x0C
 
 
 class TargetApplicationIsActive(BootloaderError):
     STATUS = 0x0D
+
+
+class CallbackResponseInvalid(BootloaderError):
+    STATUS = 0x0E
 
 
 class UnknownError(BootloaderError):
@@ -66,14 +97,20 @@ class BootloaderResponse(object):
     ARGS = ()
 
     ERRORS = {klass.STATUS: klass for klass in [
+        BootloaderKeyError,
+        VerificationError,
         IncorrectLength,
         InvalidData,
         InvalidCommand,
         InvalidChecksum,
+        UnexpectedDevice,
+        UnsupportedBootloaderVersion,
         InvalidArray,
         InvalidFlashRow,
+        ProtectedFlash,
         InvalidApp,
         TargetApplicationIsActive,
+        CallbackResponseInvalid,
         UnknownError
     ]}
 
