@@ -53,6 +53,10 @@ class InvalidApp(BootloaderError):
     STATUS = 0x0C
 
 
+class TargetApplicationIsActive(BootloaderError):
+    STATUS = 0x0D
+
+
 class UnknownError(BootloaderError):
     STATUS = 0x0F
 
@@ -69,6 +73,7 @@ class BootloaderResponse(object):
         InvalidArray,
         InvalidFlashRow,
         InvalidApp,
+        TargetApplicationIsActive,
         UnknownError
     ]}
 
@@ -99,6 +104,9 @@ class BootloaderResponse(object):
         if checksum != calculated_checksum:
             raise InvalidPacketError(
                 "Invalid packet checksum 0x{0:02X}, expected 0x{1:02X}".format(checksum, calculated_checksum))
+
+
+        # TODO Handle status 0x0D: The application is currently marked as active
 
         if (status != 0x00):
             response_class = cls.ERRORS.get(status)
