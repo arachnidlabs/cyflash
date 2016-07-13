@@ -6,6 +6,8 @@ import time
 import six
 import sys
 
+from builtins import input
+
 from . import cyacd
 from . import protocol
 
@@ -52,7 +54,6 @@ parser.add_argument(
     dest='canbus_channel',
     metavar='CANBUS_CHANNEL',
     default=0,
-    type=int,
     help="CANbus channel to be used")
 parser.add_argument(
     '--canbus_id',
@@ -164,20 +165,18 @@ def make_session(args, checksum_type):
     return protocol.BootloaderSession(transport, checksum_func)
 
 
-def seek_permission(default, message):
-    if default is not None:
-        return lambda remote, local: default
+def seek_permission(argument, message):
+    if argument is not None:
+        return lambda remote, local: argument
     else:
         def prompt(*args):
             while True:
-                if six.PY3:
-                    result = input(message % args)
-                else:
-                    result = raw_input(message % args)
+                result = input(message % args)
                 if result.lower().startswith('y'):
                     return True
                 elif result.lower().startswith('n'):
                     return False
+        return prompt
 
 
 class BootloaderHost(object):

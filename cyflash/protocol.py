@@ -1,5 +1,6 @@
 import codecs
 import six
+from builtins import super
 import struct
 import time
 
@@ -12,8 +13,23 @@ class BootloaderError(Exception):
     pass
 
 
-class TimeoutError(BootloaderError):
+class BootloaderTimeoutError(BootloaderError):
     pass
+
+
+# TODO: Implement Security key functionality
+class BootloaderKeyError(BootloaderError):
+    STATUS = 0x01
+
+    def __init__(self):
+        super().__init__("The provided security key was incorrect")
+
+
+class VerificationError(BootloaderError):
+    STATUS = 0x02
+
+    def __init__(self):
+        super().__init__("The flash verification failed.")
 
 
 class IncorrectLength(BootloaderError):
@@ -37,6 +53,14 @@ class InvalidCommand(BootloaderError):
         super().__init__("Command unsupported on target device")
 
 
+class UnexpectedDevice(BootloaderError):
+    STATUS = 0x06
+
+
+class UnsupportedBootloaderVersion(BootloaderError):
+    STATUS = 0x07
+
+
 class InvalidChecksum(BootloaderError):
     STATUS = 0x08
 
@@ -49,8 +73,20 @@ class InvalidFlashRow(BootloaderError):
     STATUS = 0x0A
 
 
+class ProtectedFlash(BootloaderError):
+    STATUS = 0x0B
+
+
 class InvalidApp(BootloaderError):
     STATUS = 0x0C
+
+
+class TargetApplicationIsActive(BootloaderError):
+    STATUS = 0x0D
+
+
+class CallbackResponseInvalid(BootloaderError):
+    STATUS = 0x0E
 
 
 class UnknownError(BootloaderError):
@@ -62,13 +98,20 @@ class BootloaderResponse(object):
     ARGS = ()
 
     ERRORS = {klass.STATUS: klass for klass in [
+        BootloaderKeyError,
+        VerificationError,
         IncorrectLength,
         InvalidData,
         InvalidCommand,
         InvalidChecksum,
+        UnexpectedDevice,
+        UnsupportedBootloaderVersion,
         InvalidArray,
         InvalidFlashRow,
+        ProtectedFlash,
         InvalidApp,
+        TargetApplicationIsActive,
+        CallbackResponseInvalid,
         UnknownError
     ]}
 
@@ -99,6 +142,9 @@ class BootloaderResponse(object):
         if checksum != calculated_checksum:
             raise InvalidPacketError(
                 "Invalid packet checksum 0x{0:02X}, expected 0x{1:02X}".format(checksum, calculated_checksum))
+
+
+        # TODO Handle status 0x0D: The application is currently marked as active
 
         if (status != 0x00):
             response_class = cls.ERRORS.get(status)
@@ -133,6 +179,10 @@ class BooleanResponse(BootloaderResponse):
     ARGS = ("status",)
 
 
+class EmptyResponse(BootloaderResponse):
+    pass
+
+
 class VerifyChecksumCommand(BootloaderCommand):
     COMMAND = 0x31
     RESPONSE = BooleanResponse
@@ -150,8 +200,12 @@ class GetFlashSizeCommand(BootloaderCommand):
     RESPONSE = GetFlashSizeResponse
 
 
-class EmptyResponse(BootloaderResponse):
-    pass
+# TODO: Finish implementing Get App Status command for dual app bootlaoders and in app bootloaders
+# class GetAppStatusCommand(BootloaderCommand):
+#     COMMAND = 0x33
+
+
+# class GetAppStatusResponse(BootloaderResponse):
 
 
 class EraseRowCommand(BootloaderCommand):
@@ -164,6 +218,11 @@ class EraseRowCommand(BootloaderCommand):
 class SyncBootloaderCommand(BootloaderCommand):
     COMMAND = 0x35
     RESPONSE = EmptyResponse
+
+
+# TODO: Finish implementing command to set newest app active for dual app bootloaders
+# class SetAppActive(BootloaderCommand):
+#     COMMAND = 0x36
 
 
 class SendDataCommand(BootloaderCommand):
@@ -294,11 +353,11 @@ class SerialTransport(object):
     def recv(self):
         data = self.f.read(4)
         if len(data) < 4:
-            raise TimeoutError("Timed out waiting for Bootloader response.")
+            raise BootloaderTimeoutError("Timed out waiting for Bootloader response.")
         size = struct.unpack("<H", data[-2:])[0]
         data += self.f.read(size + 3)
         if len(data) < size + 7:
-            raise TimeoutError("Timed out waiting for Bootloader response.")
+            raise BootloaderTimeoutError("Timed out waiting for Bootloader response.")
         return data
 
 
@@ -343,7 +402,7 @@ class CANbusTransport(object):
                 while (True):
                     frame = self.transport.recv(self.timeout)
                     if (not frame):
-                        raise TimeoutError("Did not receive echo frame within {} timeout".format(self.timeout))
+                        raise BootloaderTimeoutError("Did not receive echo frame within {} timeout".format(self.timeout))
                     # Don't check the frame arbitration ID, it may be used for varying purposes
                     if (frame.data[:frame.dlc] != msg.data[:msg.dlc]):
                         continue
@@ -367,15 +426,15 @@ class CANbusTransport(object):
         # Read first frame, contains data length
         frame = self.transport.recv(self.timeout)
         if (not frame):
-            raise TimeoutError("Timed out waiting for Bootloader 1st response frame")
+            raise BootloaderTimeoutError("Timed out waiting for Bootloader 1st response frame")
 
         # Don't check the frame arbitration ID, it may be used for varying purposes
 
         if len(frame.data) < 4:
-            raise TimeoutError("Unexpected response data: length {}, minimum is 4".format(len(frame.data)))
+            raise BootloaderTimeoutError("Unexpected response data: length {}, minimum is 4".format(len(frame.data)))
 
         if (frame.data[0] != 0x01):
-            raise TimeoutError("Unexpected start of frame data: 0x{0:02X}, expected 0x01".format(frame.data[0]))
+            raise BootloaderTimeoutError("Unexpected start of frame data: 0x{0:02X}, expected 0x01".format(frame.data[0]))
 
         data += frame.data[:frame.dlc]
 
@@ -384,7 +443,7 @@ class CANbusTransport(object):
         while (len(data) < total_size):
             frame = self.transport.recv(self.timeout)
             if (not frame):
-                raise TimeoutError("Timed out waiting for Bootloader response frame")
+                raise BootloaderTimeoutError("Timed out waiting for Bootloader response frame")
 
             if (self.echo_frames) and (frame.arbitration_id != self.frame_id):
                 # Got a frame from another device, ignore
@@ -399,7 +458,8 @@ def crc16_checksum(data):
     crc = 0xffff
 
     for b in data:
-        b = ord(b)
+        if not isinstance(b, int):
+            b = ord(b)
         for i in range(8):
             if (crc & 1) ^ (b & 1):
                 crc = (crc >> 1) ^ 0x8408

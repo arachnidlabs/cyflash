@@ -27,7 +27,7 @@
 
 #include <cytypes.h>
 
-#include <CAN.h>
+#include "CAN.h"
 
 /** How much do we wait between mailboxes checks */
 #define WAIT_STEP_MS    1u
@@ -77,7 +77,7 @@ void CyBtldrCommStop(void)
 void CyBtldrCommReset(void)
 {
     uint8 i;
-    
+
     // Abort pending messages
     for (i = 0u; i < CAN_NUMBER_OF_TX_MAILBOXES; i++) {
         CAN_TX_ABORT_MESSAGE(i);
@@ -97,21 +97,21 @@ cystatus CyBtldrCommWrite(uint8* buffer, uint16 size, uint16* count, uint8 timeo
     uint16 pointer = 0;
     uint8 chunk = 0;
     cystatus result = CYRET_TIMEOUT;
-    
+
     if (size == 0)
         return CYRET_TIMEOUT;
-    
+
     // For sake of simplicity we're using just mailbox 0
     // Besides, we prefer to go slow and safe and make sure
     // no outgoing messages are overlapping (in terms of priorities)
     // Make sure it's a basic mailbox
     CYASSERT((CAN_TX_MAILBOX_TYPE & 0x01) == 0u);
-    
+
     msg.id = CANbus_ID;
     msg.ide = CAN_STANDARD_MESSAGE;
     msg.rtr = CAN_STANDARD_MESSAGE;
     msg.irq = CAN_TRANSMIT_INT_DISABLE;
-    
+
     // Make sure there's no TX pending in the first mbox
     do {
         if (!CAN_TX_MAILBOX_IS_FULL(0))
@@ -125,12 +125,12 @@ cystatus CyBtldrCommWrite(uint8* buffer, uint16 size, uint16* count, uint8 timeo
     if (timeout_ms < 0) {
         return CYRET_TIMEOUT;
     }
-    
+
     // Ok, mailbox is free
     while ((pointer < size) && (timeout_ms >= 0)) {
         chunk = ((size - pointer) > CAN_TX_DLC_MAX_VALUE) ? CAN_TX_DLC_MAX_VALUE : (size - pointer);
         msg.dlc = chunk;
-        
+
         regTemp = 0u;
 
         /* Set message parameters */
@@ -146,7 +146,7 @@ cystatus CyBtldrCommWrite(uint8* buffer, uint16 size, uint16* count, uint8 timeo
         pointer += chunk;
         /* Reuse variable to mark the current error count */
         j = CAN_GetTXErrorCount();
-    
+
         /* Disable isr */
         CyIntDisable(CAN_ISR_NUMBER);
         /* WPN[23] and WPN[3] set to 1 for write to CAN Control reg */
@@ -154,7 +154,7 @@ cystatus CyBtldrCommWrite(uint8* buffer, uint16 size, uint16* count, uint8 timeo
         CY_SET_REG32(CAN_TX_CMD_PTR(0), CAN_SEND_MESSAGE);
         /* Enable isr */
         CyIntEnable(CAN_ISR_NUMBER);
-    
+
         // Check that the mailbox is free (that is, frame sent)
         do {
             i = CAN_GetTXErrorCount();
@@ -171,14 +171,14 @@ cystatus CyBtldrCommWrite(uint8* buffer, uint16 size, uint16* count, uint8 timeo
             }
         } while (CAN_TX_MAILBOX_IS_FULL(0) && (CAN_GetErrorState() == 0) && (timeout_ms >= 0));
     }
-    
+
     if (timeout_ms < 0) {
         return CYRET_TIMEOUT;
     }
-    
+
     // Useless as of bootloader v1.5
     *count = size;
-    
+
     result |= CAN_GetErrorState();
     return (result == 0) ? CYRET_SUCCESS : CYRET_TIMEOUT;
 }
@@ -200,17 +200,17 @@ cystatus CyBtldrCommRead(uint8* buffer, uint16 size, uint16* count, uint8 timeou
     uint8 got_sop;
     uint8 got_eop;
 #endif
-    
+
     *count = 0;
     if (size == 0)
         return CYRET_SUCCESS;
-    
+
     memset(buffer, 0, size);
-    
+
     // Make sure we have room in the buffer to accomodate a full CAN frame
     // Buffer should be 300 bytes, see Bootloader_SIZEOF_COMMAND_BUFFER
     CYASSERT(size >= CAN_TX_DLC_MAX_VALUE);
-    
+
     do {
         // Restart from the last-used mailbox, see static definition above
         if (mailbox >= CAN_NUMBER_OF_RX_MAILBOXES) {
@@ -227,7 +227,7 @@ cystatus CyBtldrCommRead(uint8* buffer, uint16 size, uint16* count, uint8 timeou
                 default:  // Bus off
                     return CYRET_INVALID_STATE;
             }
-            
+
             // Check message available
             if (!CAN_RX_MAILBOX_IS_FULL(mailbox)) {
                 // No message, check next mailbox
@@ -248,7 +248,7 @@ cystatus CyBtldrCommRead(uint8* buffer, uint16 size, uint16* count, uint8 timeou
 #endif
 
             full_mailboxes++;
-            
+
             dlc = CAN_RX[mailbox].rxcmd.byte[2u] & 0x0F;
             copied = dlc;
             // Apparently a data payload sent from IXXAT Minimon/Codesys as
@@ -256,7 +256,7 @@ cystatus CyBtldrCommRead(uint8* buffer, uint16 size, uint16* count, uint8 timeou
             // gets interpreted here as
             // 0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05
             // Seems the usual big/little endian issue
-            
+
             while (copied) {
                 copied--;
                 buffer[*count + copied] = CAN_RX[mailbox].rxdata.byte[bswap_dest[copied]];
@@ -269,13 +269,13 @@ cystatus CyBtldrCommRead(uint8* buffer, uint16 size, uint16* count, uint8 timeou
 #endif  // ECHO_CANBUS_FRAMES
 
             *count += dlc;
-            
+
             // Check if the high level packet is completed, so we can stop
             // the reading loop without waiting for timeout
 
             // Reuse variable, data length field in packet
             copied = *(uint16*)(buffer+2);
-#ifdef CY_PSOC3
+#if CY_PSOC3
             copied = CYSWAP_ENDIAN16(copied);
 #endif
             got_sop = (buffer[0] == 0x01);
