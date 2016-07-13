@@ -12,7 +12,7 @@ class BootloaderError(Exception):
     pass
 
 
-class TimeoutError(BootloaderError):
+class BootloaderTimeoutError(BootloaderError):
     pass
 
 
@@ -315,11 +315,11 @@ class SerialTransport(object):
     def recv(self):
         data = self.f.read(4)
         if len(data) < 4:
-            raise TimeoutError("Timed out waiting for Bootloader response.")
+            raise BootloaderTimeoutError("Timed out waiting for Bootloader response.")
         size = struct.unpack("<H", data[-2:])[0]
         data += self.f.read(size + 3)
         if len(data) < size + 7:
-            raise TimeoutError("Timed out waiting for Bootloader response.")
+            raise BootloaderTimeoutError("Timed out waiting for Bootloader response.")
         return data
 
 
@@ -364,7 +364,7 @@ class CANbusTransport(object):
                 while (True):
                     frame = self.transport.recv(self.timeout)
                     if (not frame):
-                        raise TimeoutError("Did not receive echo frame within {} timeout".format(self.timeout))
+                        raise BootloaderTimeoutError("Did not receive echo frame within {} timeout".format(self.timeout))
                     # Don't check the frame arbitration ID, it may be used for varying purposes
                     if (frame.data[:frame.dlc] != msg.data[:msg.dlc]):
                         continue
@@ -388,15 +388,15 @@ class CANbusTransport(object):
         # Read first frame, contains data length
         frame = self.transport.recv(self.timeout)
         if (not frame):
-            raise TimeoutError("Timed out waiting for Bootloader 1st response frame")
+            raise BootloaderTimeoutError("Timed out waiting for Bootloader 1st response frame")
 
         # Don't check the frame arbitration ID, it may be used for varying purposes
 
         if len(frame.data) < 4:
-            raise TimeoutError("Unexpected response data: length {}, minimum is 4".format(len(frame.data)))
+            raise BootloaderTimeoutError("Unexpected response data: length {}, minimum is 4".format(len(frame.data)))
 
         if (frame.data[0] != 0x01):
-            raise TimeoutError("Unexpected start of frame data: 0x{0:02X}, expected 0x01".format(frame.data[0]))
+            raise BootloaderTimeoutError("Unexpected start of frame data: 0x{0:02X}, expected 0x01".format(frame.data[0]))
 
         data += frame.data[:frame.dlc]
 
@@ -405,7 +405,7 @@ class CANbusTransport(object):
         while (len(data) < total_size):
             frame = self.transport.recv(self.timeout)
             if (not frame):
-                raise TimeoutError("Timed out waiting for Bootloader response frame")
+                raise BootloaderTimeoutError("Timed out waiting for Bootloader response frame")
 
             if (self.echo_frames) and (frame.arbitration_id != self.frame_id):
                 # Got a frame from another device, ignore
