@@ -260,7 +260,7 @@ class BootloaderHost(object):
 
         if metadata.app_id != local_metadata.app_id:
             message = "Device application ID is %d, but local application ID is %d." % (
-                metadata.application_id, local_metadata.application_id)
+                metadata.app_id, local_metadata.app_id)
             if not newapp(metadata.app_id, local_metadata.app_id):
                 raise ValueError(message + " Aborting.")
 
