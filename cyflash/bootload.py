@@ -125,7 +125,7 @@ parser.add_argument(
     help="Python logging configuration file")
 
 parser.add_argument(
-    'psoc5',
+    '--psoc5',
     action='store_true',
     dest='psoc5',
     default=False,
