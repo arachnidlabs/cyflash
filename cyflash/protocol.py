@@ -340,6 +340,13 @@ class GetMetadataCommand(BootloaderCommand):
     RESPONSE = GetMetadataResponse
 
 
+class GetPSOC5MetadataCommand(BootloaderCommand):
+    COMMAND = 0x3C
+    FORMAT = "<B"
+    ARGS = ("application_id",)
+    RESPONSE = GetPSOC5MetadataResponse
+
+
 class BootloaderSession(object):
     def __init__(self, transport, checksum_func):
         self.transport = transport
@@ -372,6 +379,9 @@ class BootloaderSession(object):
 
     def get_metadata(self, application_id=0):
         return self.send(GetMetadataCommand(application_id=application_id))
+
+    def get_psoc5_metadata(self, application_id=0):
+        return self.send(GetPSOC5MetadataCommand(application_id=application_id))
 
     def program_row(self, array_id, row_id, rowdata):
         self.send(ProgramRowCommand(rowdata, array_id=array_id, row_id=row_id))

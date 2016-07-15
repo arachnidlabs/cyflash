@@ -233,7 +233,10 @@ class BootloaderHost(object):
 
     def check_metadata(self, data, downgrade, newapp, psoc5):
         try:
-            metadata = self.session.get_metadata(0)
+            if psoc5:
+                metadata = self.session.get_psoc5_metadata(0)
+            else:
+                metadata = self.session.get_metadata(0)
             self.out.write("Device application_id %d, version %d.\n" % (
                 metadata.app_id, metadata.app_version))
         except protocol.InvalidApp:
