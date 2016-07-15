@@ -306,6 +306,33 @@ class GetMetadataResponse(BootloaderResponse):
         return self.__str__()
 
 
+class GetPSOC5MetadataResponse(BootloaderResponse):
+    # TODO: metadata format differs in PSOC3 and 4/5
+    FORMAT = "<BIHxxIxxxBBHHHI28x"
+    ARGS = (
+        "checksum",
+        "bootloadable_addr",
+        "bootloader_last_row",
+        "bootloadable_len",
+        "active",
+        "verified",
+        "bootloader_version",
+        "app_id",
+        "app_version",
+        "app_custom_id",
+    )
+
+    def __str__(self):
+        sb = []
+        for key in self.__dict__:
+            sb.append("{key}='{value}'".format(key=key, value=self.__dict__[key]))
+
+        return ', '.join(sb)
+
+    def __repr__(self):
+        return self.__str__()
+
+
 class GetMetadataCommand(BootloaderCommand):
     COMMAND = 0x3C
     FORMAT = "<B"
