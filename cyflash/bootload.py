@@ -14,6 +14,10 @@ from . import protocol
 
 __version__ = "1.06"
 
+
+def auto_int(x):
+    return int(x, 0)
+
 parser = argparse.ArgumentParser(description="Bootloader tool for Cypress PSoC devices")
 
 group = parser.add_mutually_exclusive_group(required=True)
@@ -61,7 +65,7 @@ parser.add_argument(
     dest='canbus_id',
     metavar='CANBUS_ID',
     default=0,
-    type=int,
+    type=auto_int,
     help="CANbus frame ID to be used")
 
 group = parser.add_mutually_exclusive_group(required=True)
