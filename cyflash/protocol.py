@@ -295,12 +295,56 @@ class GetMetadataResponse(BootloaderResponse):
         "custom_id",
     )
 
+    def __str__(self):
+        sb = []
+        for key in self.__dict__:
+            sb.append("{key}='{value}'".format(key=key, value=self.__dict__[key]))
+
+        return ', '.join(sb)
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class GetPSOC5MetadataResponse(BootloaderResponse):
+    # TODO: metadata format differs in PSOC3 and 4/5
+    FORMAT = "<BIHxxIxxxBBHHHI28x"
+    ARGS = (
+        "checksum",
+        "bootloadable_addr",
+        "bootloader_last_row",
+        "bootloadable_len",
+        "active",
+        "verified",
+        "bootloader_version",
+        "app_id",
+        "app_version",
+        "app_custom_id",
+    )
+
+    def __str__(self):
+        sb = []
+        for key in self.__dict__:
+            sb.append("{key}='{value}'".format(key=key, value=self.__dict__[key]))
+
+        return ', '.join(sb)
+
+    def __repr__(self):
+        return self.__str__()
+
 
 class GetMetadataCommand(BootloaderCommand):
     COMMAND = 0x3C
     FORMAT = "<B"
     ARGS = ("application_id",)
     RESPONSE = GetMetadataResponse
+
+
+class GetPSOC5MetadataCommand(BootloaderCommand):
+    COMMAND = 0x3C
+    FORMAT = "<B"
+    ARGS = ("application_id",)
+    RESPONSE = GetPSOC5MetadataResponse
 
 
 class BootloaderSession(object):
@@ -335,6 +379,9 @@ class BootloaderSession(object):
 
     def get_metadata(self, application_id=0):
         return self.send(GetMetadataCommand(application_id=application_id))
+
+    def get_psoc5_metadata(self, application_id=0):
+        return self.send(GetPSOC5MetadataCommand(application_id=application_id))
 
     def program_row(self, array_id, row_id, rowdata):
         self.send(ProgramRowCommand(rowdata, array_id=array_id, row_id=row_id))

@@ -14,6 +14,10 @@ from . import protocol
 
 __version__ = "1.06"
 
+
+def auto_int(x):
+    return int(x, 0)
+
 parser = argparse.ArgumentParser(description="Bootloader tool for Cypress PSoC devices")
 
 group = parser.add_mutually_exclusive_group(required=True)
@@ -61,7 +65,7 @@ parser.add_argument(
     dest='canbus_id',
     metavar='CANBUS_ID',
     default=0,
-    type=int,
+    type=auto_int,
     help="CANbus frame ID to be used")
 
 group = parser.add_mutually_exclusive_group(required=True)
@@ -125,6 +129,13 @@ parser.add_argument(
     help="Python logging configuration file")
 
 parser.add_argument(
+    '--psoc5',
+    action='store_true',
+    dest='psoc5',
+    default=False,
+    help="Add tag to parse PSOC5 metadata")
+
+parser.add_argument(
     'image',
     action='store',
     type=argparse.FileType(mode='r'),
@@ -185,13 +196,13 @@ class BootloaderHost(object):
         self.out = out
         self.row_ranges = {}
 
-    def bootload(self, data, downgrade, newapp):
+    def bootload(self, data, downgrade, newapp, psoc5):
         self.out.write("Entering bootload.\n")
         self.enter_bootloader(data)
         self.out.write("Verifying row ranges.\n")
         self.verify_row_ranges(data)
         self.out.write("Checking metadata.\n")
-        self.check_metadata(data, downgrade, newapp)
+        self.check_metadata(data, downgrade, newapp, psoc5)
         self.out.write("Starting flash operation.\n")
         self.write_rows(data)
         if not self.session.verify_checksum():
@@ -224,9 +235,12 @@ class BootloaderHost(object):
             raise ValueError("Silicon revision of device (0x%.2x) does not match firmware file (0x%.2x)"
                              % (silicon_rev, data.silicon_rev))
 
-    def check_metadata(self, data, downgrade, newapp):
+    def check_metadata(self, data, downgrade, newapp, psoc5):
         try:
-            metadata = self.session.get_metadata(0)
+            if psoc5:
+                metadata = self.session.get_psoc5_metadata(0)
+            else:
+                metadata = self.session.get_metadata(0)
             self.out.write("Device application_id %d, version %d.\n" % (
                 metadata.app_id, metadata.app_version))
         except protocol.InvalidApp:
@@ -239,7 +253,10 @@ class BootloaderHost(object):
         # TODO: Make this less horribly hacky
         # Fetch from last row of last flash array
         metadata_row = data.arrays[max(data.arrays.keys())][self.row_ranges[max(data.arrays.keys())][1]]
-        local_metadata = protocol.GetMetadataResponse(metadata_row.data[64:120])
+        if psoc5:
+            local_metadata = protocol.GetPSOC5MetadataResponse(metadata_row.data[197:197+56])
+        else:
+            local_metadata = protocol.GetMetadataResponse(metadata_row.data[64:120])
 
         if metadata.app_version > local_metadata.app_version:
             message = "Device application version is v%d.%d, but local application version is v%d.%d." % (
@@ -250,7 +267,7 @@ class BootloaderHost(object):
 
         if metadata.app_id != local_metadata.app_id:
             message = "Device application ID is %d, but local application ID is %d." % (
-                metadata.application_id, local_metadata.application_id)
+                metadata.app_id, local_metadata.app_id)
             if not newapp(metadata.app_id, local_metadata.app_id):
                 raise ValueError(message + " Aborting.")
 
@@ -300,7 +317,8 @@ def main():
                 "Device version %d is greater than local version %d. Flash anyway? (Y/N)"),
             seek_permission(
                 args.newapp,
-                "Device app ID %d is different from local app ID %d. Flash anyway? (Y/N)"))
+                "Device app ID %d is different from local app ID %d. Flash anyway? (Y/N)"),
+            args.psoc5)
     except (protocol.BootloaderError, BootloaderError) as e:
         print("Unhandled error: {}".format(e))
         return 1
