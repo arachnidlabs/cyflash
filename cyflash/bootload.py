@@ -254,7 +254,7 @@ class BootloaderHost(object):
         # Fetch from last row of last flash array
         metadata_row = data.arrays[max(data.arrays.keys())][self.row_ranges[max(data.arrays.keys())][1]]
         if psoc5:
-            local_metadata = protocol.GetPSOC5MetadataResponse(metadata_row.data[197:197+56])
+            local_metadata = protocol.GetPSOC5MetadataResponse(metadata_row.data[192:192+56])
         else:
             local_metadata = protocol.GetMetadataResponse(metadata_row.data[64:120])
 
