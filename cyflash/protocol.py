@@ -471,17 +471,21 @@ class CANbusTransport(object):
 
         data = bytearray()
         # Read first frame, contains data length
-        frame = self.transport.recv(self.timeout)
-        if (not frame):
-            raise BootloaderTimeoutError("Timed out waiting for Bootloader 1st response frame")
+        while True:
+            frame = self.transport.recv(self.timeout)
+            if (not frame):
+                raise BootloaderTimeoutError("Timed out waiting for Bootloader 1st response frame")
 
-        # Don't check the frame arbitration ID, it may be used for varying purposes
+            if frame.arbitration_id & 0x700 != 0x700:
+                continue;
 
-        if len(frame.data) < 4:
-            raise BootloaderTimeoutError("Unexpected response data: length {}, minimum is 4".format(len(frame.data)))
+            # Don't check the frame arbitration ID, it may be used for varying purposes
 
-        if (frame.data[0] != 0x01):
-            raise BootloaderTimeoutError("Unexpected start of frame data: 0x{0:02X}, expected 0x01".format(frame.data[0]))
+            if len(frame.data) < 4:
+                raise BootloaderTimeoutError("Unexpected response data: length {}, minimum is 4".format(len(frame.data)))
+
+            if (frame.data[0] != 0x01):
+                raise BootloaderTimeoutError("Unexpected start of frame data: 0x{0:02X}, expected 0x01".format(frame.data[0]))
 
         data += frame.data[:frame.dlc]
 
@@ -491,6 +495,10 @@ class CANbusTransport(object):
             frame = self.transport.recv(self.timeout)
             if (not frame):
                 raise BootloaderTimeoutError("Timed out waiting for Bootloader response frame")
+
+            if frame.arbitration_id & 0x700 != 0x700:
+                #got a frame from another device, ignore
+                continue
 
             if (self.echo_frames) and (frame.arbitration_id != self.frame_id):
                 # Got a frame from another device, ignore
