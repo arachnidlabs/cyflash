@@ -491,6 +491,8 @@ class CANbusTransport(object):
             if (frame.data[0] != 0x01):
                 raise BootloaderTimeoutError("Unexpected start of frame data: 0x{0:02X}, expected 0x01".format(frame.data[0]))
 
+            break
+
         data += frame.data[:frame.dlc]
 
         # 4 initial bytes, reported size, 3 tail
