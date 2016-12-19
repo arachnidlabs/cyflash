@@ -1,7 +1,9 @@
 import codecs
 import six
+from builtins import super
 import struct
 import time
+
 
 class InvalidPacketError(Exception):
     pass
@@ -11,26 +13,52 @@ class BootloaderError(Exception):
     pass
 
 
-class TimeoutError(BootloaderError):
+class BootloaderTimeoutError(BootloaderError):
     pass
+
+
+# TODO: Implement Security key functionality
+class BootloaderKeyError(BootloaderError):
+    STATUS = 0x01
+
+    def __init__(self):
+        super().__init__("The provided security key was incorrect")
+
+
+class VerificationError(BootloaderError):
+    STATUS = 0x02
+
+    def __init__(self):
+        super().__init__("The flash verification failed.")
 
 
 class IncorrectLength(BootloaderError):
     STATUS = 0x03
+
     def __init__(self):
         super().__init__("The amount of data available is outside the expected range")
 
 
 class InvalidData(BootloaderError):
     STATUS = 0x04
+
     def __init__(self):
         super().__init__("The data is not of the proper form")
 
 
 class InvalidCommand(BootloaderError):
     STATUS = 0x05
+
     def __init__(self):
         super().__init__("Command unsupported on target device")
+
+
+class UnexpectedDevice(BootloaderError):
+    STATUS = 0x06
+
+
+class UnsupportedBootloaderVersion(BootloaderError):
+    STATUS = 0x07
 
 
 class InvalidChecksum(BootloaderError):
@@ -45,8 +73,20 @@ class InvalidFlashRow(BootloaderError):
     STATUS = 0x0A
 
 
+class ProtectedFlash(BootloaderError):
+    STATUS = 0x0B
+
+
 class InvalidApp(BootloaderError):
     STATUS = 0x0C
+
+
+class TargetApplicationIsActive(BootloaderError):
+    STATUS = 0x0D
+
+
+class CallbackResponseInvalid(BootloaderError):
+    STATUS = 0x0E
 
 
 class UnknownError(BootloaderError):
@@ -58,13 +98,20 @@ class BootloaderResponse(object):
     ARGS = ()
 
     ERRORS = {klass.STATUS: klass for klass in [
+        BootloaderKeyError,
+        VerificationError,
         IncorrectLength,
         InvalidData,
         InvalidCommand,
         InvalidChecksum,
+        UnexpectedDevice,
+        UnsupportedBootloaderVersion,
         InvalidArray,
         InvalidFlashRow,
+        ProtectedFlash,
         InvalidApp,
+        TargetApplicationIsActive,
+        CallbackResponseInvalid,
         UnknownError
     ]}
 
@@ -88,12 +135,16 @@ class BootloaderResponse(object):
             raise InvalidPacketError("Expected packet data length {} actual {}".format(length, expected_dlen))
 
         checksum, end = struct.unpack("<HB", data[-3:])
-        data = data[:length+4]
+        data = data[:length + 4]
         if end != 0x17:
             raise InvalidPacketError("Invalid end of packet code 0x{0:02X}, expected 0x17".format(end))
         calculated_checksum = checksum_func(data)
         if checksum != calculated_checksum:
-            raise InvalidPacketError("Invalid packet checksum 0x{0:02X}, expected 0x{1:02X}".format(checksum, calculated_checksum))
+            raise InvalidPacketError(
+                "Invalid packet checksum 0x{0:02X}, expected 0x{1:02X}".format(checksum, calculated_checksum))
+
+
+        # TODO Handle status 0x0D: The application is currently marked as active
 
         if (status != 0x00):
             response_class = cls.ERRORS.get(status)
@@ -104,6 +155,7 @@ class BootloaderResponse(object):
 
         data = data[4:]
         return cls(data)
+
 
 class BootloaderCommand(object):
     COMMAND = None
@@ -127,6 +179,10 @@ class BooleanResponse(BootloaderResponse):
     ARGS = ("status",)
 
 
+class EmptyResponse(BootloaderResponse):
+    pass
+
+
 class VerifyChecksumCommand(BootloaderCommand):
     COMMAND = 0x31
     RESPONSE = BooleanResponse
@@ -144,8 +200,13 @@ class GetFlashSizeCommand(BootloaderCommand):
     RESPONSE = GetFlashSizeResponse
 
 
-class EmptyResponse(BootloaderResponse):
-    pass
+# TODO: Finish implementing Get App Status command for dual app bootlaoders and in app bootloaders
+# class GetAppStatusCommand(BootloaderCommand):
+#     COMMAND = 0x33
+
+
+# class GetAppStatusResponse(BootloaderResponse):
+
 
 class EraseRowCommand(BootloaderCommand):
     COMMAND = 0x34
@@ -157,6 +218,11 @@ class EraseRowCommand(BootloaderCommand):
 class SyncBootloaderCommand(BootloaderCommand):
     COMMAND = 0x35
     RESPONSE = EmptyResponse
+
+
+# TODO: Finish implementing command to set newest app active for dual app bootloaders
+# class SetAppActive(BootloaderCommand):
+#     COMMAND = 0x36
 
 
 class SendDataCommand(BootloaderCommand):
@@ -229,12 +295,56 @@ class GetMetadataResponse(BootloaderResponse):
         "custom_id",
     )
 
+    def __str__(self):
+        sb = []
+        for key in self.__dict__:
+            sb.append("{key}='{value}'".format(key=key, value=self.__dict__[key]))
+
+        return ', '.join(sb)
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class GetPSOC5MetadataResponse(BootloaderResponse):
+    # TODO: metadata format differs in PSOC3 and 4/5
+    FORMAT = "<BIHxxIxxxBBHHHI28x"
+    ARGS = (
+        "checksum",
+        "bootloadable_addr",
+        "bootloader_last_row",
+        "bootloadable_len",
+        "active",
+        "verified",
+        "bootloader_version",
+        "app_id",
+        "app_version",
+        "app_custom_id",
+    )
+
+    def __str__(self):
+        sb = []
+        for key in self.__dict__:
+            sb.append("{key}='{value}'".format(key=key, value=self.__dict__[key]))
+
+        return ', '.join(sb)
+
+    def __repr__(self):
+        return self.__str__()
+
 
 class GetMetadataCommand(BootloaderCommand):
     COMMAND = 0x3C
     FORMAT = "<B"
-    ARGS = ("application_id", )
+    ARGS = ("application_id",)
     RESPONSE = GetMetadataResponse
+
+
+class GetPSOC5MetadataCommand(BootloaderCommand):
+    COMMAND = 0x3C
+    FORMAT = "<B"
+    ARGS = ("application_id",)
+    RESPONSE = GetPSOC5MetadataResponse
 
 
 class BootloaderSession(object):
@@ -270,6 +380,9 @@ class BootloaderSession(object):
     def get_metadata(self, application_id=0):
         return self.send(GetMetadataCommand(application_id=application_id))
 
+    def get_psoc5_metadata(self, application_id=0):
+        return self.send(GetPSOC5MetadataCommand(application_id=application_id))
+
     def program_row(self, array_id, row_id, rowdata):
         self.send(ProgramRowCommand(rowdata, array_id=array_id, row_id=row_id))
 
@@ -287,12 +400,13 @@ class SerialTransport(object):
     def recv(self):
         data = self.f.read(4)
         if len(data) < 4:
-            raise TimeoutError("Timed out waiting for Bootloader response.")
+            raise BootloaderTimeoutError("Timed out waiting for Bootloader response.")
         size = struct.unpack("<H", data[-2:])[0]
         data += self.f.read(size + 3)
         if len(data) < size + 7:
-            raise TimeoutError("Timed out waiting for Bootloader response.")
+            raise BootloaderTimeoutError("Timed out waiting for Bootloader response.")
         return data
+
 
 class CANbusTransport(object):
     MESSAGE_CLASS = None
@@ -315,7 +429,7 @@ class CANbusTransport(object):
                 msg = self.MESSAGE_CLASS(
                     extended_id=False,
                     arbitration_id=self.frame_id,
-                    data=data[start:start+8]
+                    data=data[start:start + 8]
                 )
             else:
                 msg = self.MESSAGE_CLASS(
@@ -335,7 +449,7 @@ class CANbusTransport(object):
                 while (True):
                     frame = self.transport.recv(self.timeout)
                     if (not frame):
-                        raise TimeoutError("Did not receive echo frame within {} timeout".format(self.timeout))
+                        raise BootloaderTimeoutError("Did not receive echo frame within {} timeout".format(self.timeout))
                     # Don't check the frame arbitration ID, it may be used for varying purposes
                     if (frame.data[:frame.dlc] != msg.data[:msg.dlc]):
                         continue
@@ -357,17 +471,24 @@ class CANbusTransport(object):
 
         data = bytearray()
         # Read first frame, contains data length
-        frame = self.transport.recv(self.timeout)
-        if (not frame):
-            raise TimeoutError("Timed out waiting for Bootloader 1st response frame")
+        while True:
+            frame = self.transport.recv(self.timeout)
+            if (not frame):
+                raise BootloaderTimeoutError("Timed out waiting for Bootloader 1st response frame")
 
-        # Don't check the frame arbitration ID, it may be used for varying purposes
+            if frame.arbitration_id & 0x700 != 0x700:
+                print("Invalid frame, discarding", frame)
+                continue;
 
-        if len(frame.data) < 4:
-            raise TimeoutError("Unexpected response data: length {}, minimum is 4".format(len(frame.data)))
+            # Don't check the frame arbitration ID, it may be used for varying purposes
 
-        if (frame.data[0] != 0x01):
-            raise TimeoutError("Unexpected start of frame data: 0x{0:02X}, expected 0x01".format(frame.data[0]))
+            if len(frame.data) < 4:
+                raise BootloaderTimeoutError("Unexpected response data: length {}, minimum is 4".format(len(frame.data)))
+
+            if (frame.data[0] != 0x01):
+                raise BootloaderTimeoutError("Unexpected start of frame data: 0x{0:02X}, expected 0x01".format(frame.data[0]))
+
+            break
 
         data += frame.data[:frame.dlc]
 
@@ -376,7 +497,12 @@ class CANbusTransport(object):
         while (len(data) < total_size):
             frame = self.transport.recv(self.timeout)
             if (not frame):
-                raise TimeoutError("Timed out waiting for Bootloader response frame")
+                raise BootloaderTimeoutError("Timed out waiting for Bootloader response frame")
+
+            if frame.arbitration_id & 0x700 != 0x700:
+                print("Invalid frame 2, discarding", frame)
+                #got a frame from another device, ignore
+                continue
 
             if (self.echo_frames) and (frame.arbitration_id != self.frame_id):
                 # Got a frame from another device, ignore
@@ -386,11 +512,13 @@ class CANbusTransport(object):
 
         return data
 
+
 def crc16_checksum(data):
     crc = 0xffff
 
     for b in data:
-        b = ord(b)
+        if not isinstance(b, int):
+            b = ord(b)
         for i in range(8):
             if (crc & 1) ^ (b & 1):
                 crc = (crc >> 1) ^ 0x8408
@@ -400,6 +528,7 @@ def crc16_checksum(data):
 
     crc = (crc << 8) | (crc >> 8)
     return ~crc & 0xffff
+
 
 def sum_2complement_checksum(data):
     if (type(data) is str):
