@@ -52,7 +52,7 @@
 //  #define CAN_TX_MAILBOX_IS_FULL(i) (CAN_BUF_SR_REG.byte[2] & (uint8)(1u << i))
 #   define CAN_TX_MAILBOX_IS_FULL(i) (CAN_TX[i].txcmd.byte[0] & CAN_TX_REQUEST_PENDING)
 #else  /* CY_PSOC4 */
-#   error CAN_TX_MAILBOX_IS_FULL is only implemented on PSOC3/PSOC5
+#   define CAN_TX_MAILBOX_IS_FULL(i) ((CAN_TX_CMD_REG(i) & CAN_TX_REQUEST_PENDING) != 0)
 #endif /* CY_PSOC3 || CY_PSOC5 */
 
 // --------------------------------------------------------------------------
