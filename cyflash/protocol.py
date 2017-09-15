@@ -203,12 +203,16 @@ class GetFlashSizeCommand(BootloaderCommand):
     RESPONSE = GetFlashSizeResponse
 
 
-# TODO: Finish implementing Get App Status command for dual app bootlaoders and in app bootloaders
-# class GetAppStatusCommand(BootloaderCommand):
-#     COMMAND = 0x33
+class GetAppStatusResponse(BootloaderResponse):
+    FORMAT = "<BB"
+    ARGS = ("app_valid", "app_active")
 
 
-# class GetAppStatusResponse(BootloaderResponse):
+class GetAppStatusCommand(BootloaderCommand):
+    COMMAND = 0x33
+    FORMAT = "B"
+    ARGS = ("application_id",)
+    RESPONSE = GetAppStatusResponse
 
 
 class EraseRowCommand(BootloaderCommand):
@@ -223,9 +227,11 @@ class SyncBootloaderCommand(BootloaderCommand):
     RESPONSE = EmptyResponse
 
 
-# TODO: Finish implementing command to set newest app active for dual app bootloaders
-# class SetAppActive(BootloaderCommand):
-#     COMMAND = 0x36
+class SetAppActive(BootloaderCommand):
+    COMMAND = 0x36
+    FORMAT = "B"
+    ARGS = ("application_id",)
+    RESPONSE = EmptyResponse
 
 
 class SendDataCommand(BootloaderCommand):
@@ -381,6 +387,10 @@ class BootloaderSession(object):
         response = self.send(EnterBootloaderCommand(key))
         return response.silicon_id, response.silicon_rev, response.bl_version | (response.bl_version_2 << 16)
 
+    def application_status(self, application_id):
+        response = self.send(GetAppStatusCommand(application_id=application_id))
+        return response.app_valid, response.app_active
+
     def exit_bootloader(self):
         self.send(ExitBootloaderCommand(), read=False)
 
@@ -405,6 +415,9 @@ class BootloaderSession(object):
 
     def get_row_checksum(self, array_id, row_id):
         return self.send(VerifyRowCommand(array_id=array_id, row_id=row_id)).checksum
+
+    def set_application_active(self, application_id):
+        self.send(SetAppActive(application_id=application_id))
 
 
 class SerialTransport(object):

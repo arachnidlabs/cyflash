@@ -171,6 +171,13 @@ parser.add_argument(
     help="Chunk size to use for transfers - default %d" % DEFAULT_CHUNKSIZE)
 
 parser.add_argument(
+    '--dual-app',
+    action='store_true',
+    dest='dual_app',
+    default=False,
+    help="The bootloader is dual-application - will mark the newly flashed app as active")
+
+parser.add_argument(
     '-v',
     '--verbose',
     action='store_true',
@@ -238,12 +245,16 @@ class BootloaderHost(object):
         self.session = session
         self.key = args.key
         self.chunk_size = args.chunk_size
+        self.dual_app = args.dual_app
         self.out = out
         self.row_ranges = {}
 
     def bootload(self, data, downgrade, newapp, psoc5):
         self.out.write("Entering bootload.\n")
         self.enter_bootloader(data)
+        if self.dual_app:
+            self.out.write("Getting application status.\n")
+            app_area_to_flash = self.application_status()
         self.out.write("Verifying row ranges.\n")
         self.verify_row_ranges(data)
         self.out.write("Checking metadata.\n")
@@ -254,8 +265,27 @@ class BootloaderHost(object):
             raise BootloaderError("Flash checksum does not verify! Aborting.")
         else:
             self.out.write("Device checksum verifies OK.\n")
+        if self.dual_app:
+            self.set_application_active(app_area_to_flash)
         self.out.write("Rebooting device.\n")
         self.session.exit_bootloader()
+
+    def set_application_active(self, application_id):
+        self.out.write("Setting application %d as active.\n" % application_id)
+        self.session.set_application_active(application_id)
+
+    def application_status(self):
+        to_flash = None
+        for app in [0, 1]:
+            app_valid, app_active = self.session.application_status(app)
+            self.out.write("App %d: valid: %s, active: %s\n" % (app, app_valid, app_active))
+            if app_active == 0:
+                to_flash = app
+
+        if to_flash is None:
+            raise BootloaderError("Failed to find inactive app to flash. Aborting.")
+        self.out.write("Will flash app %d.\n" % to_flash)
+        return to_flash
 
     def verify_row_ranges(self, data):
         for array_id, array in six.iteritems(data.arrays):
