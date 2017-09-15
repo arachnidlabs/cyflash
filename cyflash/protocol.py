@@ -84,6 +84,9 @@ class InvalidApp(BootloaderError):
 class TargetApplicationIsActive(BootloaderError):
     STATUS = 0x0D
 
+    def __init__(self):
+        super().__init__("The application is currently marked as active or golden image")
+
 
 class CallbackResponseInvalid(BootloaderError):
     STATUS = 0x0E
