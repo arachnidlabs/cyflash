@@ -247,6 +247,17 @@ class EnterBootloaderCommand(BootloaderCommand):
     COMMAND = 0x38
     RESPONSE = EnterBootloaderResponse
 
+    def __init__(self, key):
+        self._key = key
+        super(EnterBootloaderCommand, self).__init__()
+
+    @property
+    def data(self):
+        if self._key is None:
+            return super(EnterBootloaderCommand, self).data
+        return super(EnterBootloaderCommand, self).data + struct.pack("<BBBBBB",
+                                                                      *self._key)
+
 
 class ProgramRowCommand(BootloaderCommand):
     COMMAND = 0x39
@@ -363,8 +374,8 @@ class BootloaderSession(object):
         else:
             return None
 
-    def enter_bootloader(self):
-        response = self.send(EnterBootloaderCommand())
+    def enter_bootloader(self, key):
+        response = self.send(EnterBootloaderCommand(key))
         return response.silicon_id, response.silicon_rev, response.bl_version | (response.bl_version_2 << 16)
 
     def exit_bootloader(self):
