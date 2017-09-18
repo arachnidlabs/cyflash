@@ -22,7 +22,7 @@ setup(
     author="Nick Johnson",
     author_email="nick@arachnidlabs.com",
     url="http://github.com/arachnidlabs/cyflash/",
-    install_requires=["pyserial", "six>=1.10"],
+    install_requires=["pyserial", "six>=1.10", "future"],
     extras_require={
         'CANbus': ["python-can>=1.4"]
     },
