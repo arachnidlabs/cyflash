@@ -135,6 +135,31 @@ parser.add_argument(
     default=False,
     help="Add tag to parse PSOC5 metadata")
 
+def validate_key(string):
+    if len(string) != 14:
+        raise argparse.ArgumentTypeError("key is of unexpected length")
+
+    try:
+        val = int(string, base=16)
+        key = []
+        key.append((val >> 40) & 0xff)
+        key.append((val >> 32) & 0xff)
+        key.append((val >> 24) & 0xff)
+        key.append((val >> 16) & 0xff)
+        key.append((val >> 8) & 0xff)
+        key.append(val & 0xff)
+        return key
+    except ValueError:
+        raise argparse.ArgumentTypeError("key is of unexpected format")
+
+parser.add_argument(
+    '--key',
+    action='store',
+    dest='key',
+    default=None,
+    type=validate_key,
+    help="Optional security key (six bytes, on the form 0xAABBCCDDEEFF)")
+
 parser.add_argument(
     '-v',
     '--verbose',
@@ -199,8 +224,9 @@ def seek_permission(argument, message):
 
 
 class BootloaderHost(object):
-    def __init__(self, session, out):
+    def __init__(self, session, args, out):
         self.session = session
+        self.key = args.key
         self.out = out
         self.row_ranges = {}
 
@@ -234,7 +260,7 @@ class BootloaderHost(object):
 
     def enter_bootloader(self, data):
         self.out.write("Initialising bootloader.\n")
-        silicon_id, silicon_rev, bootloader_version = self.session.enter_bootloader()
+        silicon_id, silicon_rev, bootloader_version = self.session.enter_bootloader(self.key)
         self.out.write("Silicon ID 0x%.8x, revision %d.\n" % (silicon_id, silicon_rev))
         if silicon_id != data.silicon_id:
             raise ValueError("Silicon ID of device (0x%.8x) does not match firmware file (0x%.8x)"
@@ -316,7 +342,7 @@ def main():
         t0 = time.clock()
     data = cyacd.BootloaderData.read(args.image)
     session = make_session(args, data.checksum_type)
-    bl = BootloaderHost(session, sys.stdout)
+    bl = BootloaderHost(session, args, sys.stdout)
     try:
         bl.bootload(
             data,
