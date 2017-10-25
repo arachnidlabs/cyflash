@@ -136,6 +136,14 @@ parser.add_argument(
     help="Add tag to parse PSOC5 metadata")
 
 parser.add_argument(
+    '-v',
+    '--verbose',
+    action='store_true',
+    dest='verbose',
+    default=False,
+    help="Enable verbose debug output")
+
+parser.add_argument(
     'image',
     action='store',
     type=argparse.FileType(mode='r'),
@@ -156,7 +164,7 @@ def make_session(args, checksum_type):
         ser = serial.Serial(args.serial, args.serial_baudrate, timeout=args.timeout)
         ser.flushInput()  # need to clear any garbage off the serial port
         ser.flushOutput()
-        transport = protocol.SerialTransport(ser)
+        transport = protocol.SerialTransport(ser, args.verbose)
     elif args.canbus:
         import can
         # Remaining configuration options should follow python-can practices
