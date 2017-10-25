@@ -68,7 +68,7 @@ parser.add_argument(
     type=auto_int,
     help="CANbus frame ID to be used")
 
-group = parser.add_mutually_exclusive_group(required=True)
+group = parser.add_mutually_exclusive_group(required=False)
 group.add_argument(
     '--canbus_echo',
     action='store_true',
