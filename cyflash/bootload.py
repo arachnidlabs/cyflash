@@ -160,6 +160,16 @@ parser.add_argument(
     type=validate_key,
     help="Optional security key (six bytes, on the form 0xAABBCCDDEEFF)")
 
+DEFAULT_CHUNKSIZE = 25
+parser.add_argument(
+    '-cs',
+    '--chunk-size',
+    action='store',
+    dest='chunk_size',
+    default=DEFAULT_CHUNKSIZE,
+    type=int,
+    help="Chunk size to use for transfers - default %d" % DEFAULT_CHUNKSIZE)
+
 parser.add_argument(
     '-v',
     '--verbose',
@@ -227,6 +237,7 @@ class BootloaderHost(object):
     def __init__(self, session, args, out):
         self.session = session
         self.key = args.key
+        self.chunk_size = args.chunk_size
         self.out = out
         self.row_ranges = {}
 
@@ -311,7 +322,7 @@ class BootloaderHost(object):
         for array_id, array in six.iteritems(data.arrays):
             for row_number, row in array.items():
                 i += 1
-                self.session.program_row(array_id, row_number, row.data)
+                self.session.program_row(array_id, row_number, row.data, self.chunk_size)
                 actual_checksum = self.session.get_row_checksum(array_id, row_number)
                 if actual_checksum != row.checksum:
                     raise BootloaderError(

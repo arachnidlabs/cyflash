@@ -397,8 +397,11 @@ class BootloaderSession(object):
     def get_psoc5_metadata(self, application_id=0):
         return self.send(GetPSOC5MetadataCommand(application_id=application_id))
 
-    def program_row(self, array_id, row_id, rowdata):
-        self.send(ProgramRowCommand(rowdata, array_id=array_id, row_id=row_id))
+    def program_row(self, array_id, row_id, rowdata, chunk_size):
+        chunked = [rowdata[i:i + chunk_size] for i in xrange(0, len(rowdata), chunk_size)]
+        for chunk in chunked[0:-1]:
+            self.send(SendDataCommand(chunk))
+        self.send(ProgramRowCommand(chunked[-1], array_id=array_id, row_id=row_id))
 
     def get_row_checksum(self, array_id, row_id):
         return self.send(VerifyRowCommand(array_id=array_id, row_id=row_id)).checksum
