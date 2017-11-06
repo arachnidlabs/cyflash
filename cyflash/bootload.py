@@ -12,7 +12,7 @@ from . import cyacd
 from . import protocol
 
 
-__version__ = "1.06"
+__version__ = "1.07"
 
 
 def auto_int(x):
