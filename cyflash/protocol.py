@@ -500,9 +500,8 @@ class CANbusTransport(object):
             if (not frame):
                 raise BootloaderTimeoutError("Timed out waiting for Bootloader 1st response frame")
 
-            if frame.arbitration_id & 0x700 != 0x700:
-                print("Invalid frame, discarding", frame)
-                continue;
+            if frame.arbitration_id != self.frame_id:
+                continue
 
             # Don't check the frame arbitration ID, it may be used for varying purposes
 
@@ -522,11 +521,6 @@ class CANbusTransport(object):
             frame = self.transport.recv(self.timeout)
             if (not frame):
                 raise BootloaderTimeoutError("Timed out waiting for Bootloader response frame")
-
-            if frame.arbitration_id & 0x700 != 0x700:
-                print("Invalid frame 2, discarding", frame)
-                #got a frame from another device, ignore
-                continue
 
             if (self.echo_frames) and (frame.arbitration_id != self.frame_id):
                 # Got a frame from another device, ignore
