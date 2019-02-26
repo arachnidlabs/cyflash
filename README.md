@@ -21,7 +21,7 @@ This will install the cyflash.exe in python\Scripts directory
 
 You can also run cyflash directly from python:
 ```
-python cyflash/bootload.py --help
+python cyflash_run.py --help
 ```
 
 
