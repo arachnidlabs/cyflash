@@ -8,10 +8,9 @@ import sys
 
 from builtins import input
 
-#from . import cyacd
-#from . import protocol
-import cyacd
-import protocol
+from . import cyacd
+from . import protocol
+
 
 __version__ = "1.07"
 
