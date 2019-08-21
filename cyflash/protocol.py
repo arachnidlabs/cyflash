@@ -428,8 +428,8 @@ class SerialTransport(object):
 
     def send(self, data):
         if self._verbose:
-            for char in data:
-                print("s: 0x%02x" % ord(char))
+            for part in bytearray(data):
+                print("s: 0x%02x" % part)
         self.f.write(data)
 
     def recv(self):
@@ -439,8 +439,8 @@ class SerialTransport(object):
         size = struct.unpack("<H", data[-2:])[0]
         data += self.f.read(size + 3)
         if self._verbose:
-            for part in data:
-                print("r: 0x%02x" % ord(part))
+            for part in bytearray(data):
+                print("r: 0x%02x" % part)
         if len(data) < size + 7:
             raise BootloaderTimeoutError("Timed out waiting for Bootloader response.")
         return data
