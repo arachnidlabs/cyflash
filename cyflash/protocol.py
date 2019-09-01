@@ -429,7 +429,7 @@ class SerialTransport(object):
     def send(self, data):
         if self._verbose:
             for part in bytearray(data):
-                print("s: 0x%02x" % part)
+                print("s: 0x{:02x}".format(part))
         self.f.write(data)
 
     def recv(self):
@@ -440,7 +440,7 @@ class SerialTransport(object):
         data += self.f.read(size + 3)
         if self._verbose:
             for part in bytearray(data):
-                print("r: 0x%02x" % part)
+                print("r: 0x{:02x}".format(part))
         if len(data) < size + 7:
             raise BootloaderTimeoutError("Timed out waiting for Bootloader response.")
         return data
