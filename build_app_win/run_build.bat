@@ -5,6 +5,7 @@ pyinstaller ../cyflash_run.py --path "C:\Program Files (x86)\Microsoft Visual St
 --hidden-import=can.interfaces.kvaser ^
 --hidden-import=can.interfaces.vector ^
 --hidden-import=can.interfaces.serial ^ 
+--hidden-import=serial ^ 
 
 
 pause
