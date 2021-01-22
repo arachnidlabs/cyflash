@@ -45,6 +45,30 @@ parser.add_argument(
     type=int,
     help="Baud rate to use when flashing using serial (default 115200)")
 parser.add_argument(
+    '--parity',
+    action='store',
+    default='None',
+    type=str,
+    help="Desired parity (e.g. None, Even, Odd, Mark, or Space)")
+parser.add_argument(
+    '--stopbits',
+    action='store',
+    default='1',
+    type=str,
+    help="Desired stop bits (e.g. 1, 1.5, or 2)")
+parser.add_argument(
+    '--dtr',
+    action='store',
+    default='true',
+    type=str,
+    help="DTR state (e.g. true or false)")
+parser.add_argument(
+    '--rts',
+    action='store',
+    default='true',
+    type=str,
+    help="RTS state (e.g. true or false)")
+parser.add_argument(
     '--canbus_baudrate',
     action='store',
     dest='canbus_baudrate',
@@ -203,7 +227,15 @@ class BootloaderError(Exception): pass
 def make_session(args, checksum_type):
     if args.serial:
         import serial
-        ser = serial.Serial(args.serial, args.serial_baudrate, timeout=args.timeout)
+        ser = serial.Serial()
+        ser.port = args.serial
+        ser.baudrate = args.serial_baudrate
+        ser.parity = parity_convert(args.parity)
+        ser.stopbits = stopbits_convert(args.stopbits)
+        ser.timeout = args.timeout
+        ser.rts = convertBoolean(args.dtr)
+        ser.dtr = convertBoolean(args.rts)
+        ser.open()
         ser.flushInput()  # need to clear any garbage off the serial port
         ser.flushOutput()
         transport = protocol.SerialTransport(ser, args.verbose)
@@ -368,6 +400,44 @@ class BootloaderHost(object):
             self.out.write("\r%s (%d/%d)" % (message, current, total))
         self.out.flush()
 
+def stopbits_convert(value):
+    import serial
+    if value=="1":
+        stopbits = serial.STOPBITS_ONE
+    elif value=="1.5":
+        stopbits = serial.STOPBITS_ONE_POINT_FIVE
+    elif value=="2":
+        stopbits = serial.STOPBITS_TWO
+    else:
+        stopbits = serial.STOPBITS_ONE
+        print '\nillegal arugment', value, 'for stopbit using', stopbits, 'instead\n'
+
+    return stopbits
+
+def parity_convert(value):
+    import serial
+    if value in ("None", "none", "NONE", "N", "n"):
+        parity = serial.PARITY_NONE
+    elif value in ("Even", "even", "EVEN", "E", "e"):
+        parity = serial.PARITY_EVEN
+    elif value in ("Odd", "odd", "ODD", "O", "o"):
+        parity = serial.PARITY_ODD
+    else:
+        parity = serial.PARITY_NONE
+        print '\nillegal argument', value, 'for parity using', parity, 'instead\n'
+
+    return parity
+
+def convertBoolean(value):
+    if value in ("t", "T", "true", "True", "TRUE"):
+        b = 1
+    elif value in ("f", "F", "false", "False", "FALSE"):
+        b = 0
+    else:
+        b = 1
+        print '\nillegal boolean argument', value, 'using', b, 'instead\n'
+
+    return b
 
 def main():
     args = parser.parse_args()
