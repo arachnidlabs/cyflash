@@ -412,7 +412,7 @@ def parity_convert(value):
         parity = serial.PARITY_ODD
     else:
         parity = serial.PARITY_NONE
-        print( '\nillegal argument', value, 'for parity using', parity, 'instead\n' )
+        print('\nillegal argument', value, 'for parity using', parity, 'instead\n')
 
     return parity
 
