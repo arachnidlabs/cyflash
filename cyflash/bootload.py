@@ -45,6 +45,26 @@ parser.add_argument(
     type=int,
     help="Baud rate to use when flashing using serial (default 115200)")
 parser.add_argument(
+    '--parity',
+    action='store',
+    default='None',
+    type=str,
+    help="Desired parity (e.g. None, Even, Odd, Mark, or Space)")
+parser.add_argument(
+    '--stopbits',
+    action='store',
+    default='1',
+    type=str,
+    help="Desired stop bits (e.g. 1, 1.5, or 2)")
+parser.add_argument(
+    '--dtr',
+    action='store_true',
+    help="set DTR state true (default false)")
+parser.add_argument(
+    '--rts',
+    action='store_true',
+    help="set RTS state true (default false)")
+parser.add_argument(
     '--canbus_baudrate',
     action='store',
     dest='canbus_baudrate',
@@ -203,7 +223,21 @@ class BootloaderError(Exception): pass
 def make_session(args, checksum_type):
     if args.serial:
         import serial
-        ser = serial.Serial(args.serial, args.serial_baudrate, timeout=args.timeout)
+        ser = serial.Serial()
+        ser.port = args.serial
+        ser.baudrate = args.serial_baudrate
+        ser.parity = parity_convert(args.parity)
+        mapping = {"1": serial.STOPBITS_ONE,
+           "1.5": serial.STOPBITS_ONE_POINT_FIVE,
+           "2": serial.STOPBITS_TWO,
+           }
+        if not args.stopbits in mapping:
+            print('\nillegal argument', args.stopbits, 'for stopbit using ONE STOPBIT instead\n')
+        ser.stopbits = mapping.get(args.stopbits, serial.STOPBITS_ONE)
+        ser.timeout = args.timeout
+        ser.rts = args.dtr
+        ser.dtr = args.rts
+        ser.open()
         ser.flushInput()  # need to clear any garbage off the serial port
         ser.flushOutput()
         transport = protocol.SerialTransport(ser, args.verbose)
@@ -368,6 +402,19 @@ class BootloaderHost(object):
             self.out.write("\r%s (%d/%d)" % (message, current, total))
         self.out.flush()
 
+def parity_convert(value):
+    import serial
+    if value.lower() in ("none", "n"):
+        parity = serial.PARITY_NONE
+    elif value.lower() in ("even", "e"):
+        parity = serial.PARITY_EVEN
+    elif value.lower() in ("odd", "o"):
+        parity = serial.PARITY_ODD
+    else:
+        parity = serial.PARITY_NONE
+        print('\nillegal argument', value, 'for parity using', parity, 'instead\n')
+
+    return parity
 
 def main():
     args = parser.parse_args()
