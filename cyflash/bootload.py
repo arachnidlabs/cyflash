@@ -383,10 +383,10 @@ class BootloaderHost(object):
     def write_rows(self, data):
         total = sum(len(x) for x in data.arrays.values())
         i = 0
-        nbOfTries = 3
+        nb_of_tries = 3
         for array_id, array in six.iteritems(data.arrays):
             for row_number, row in array.items():
-                tries = nbOfTries
+                tries = nb_of_tries
                 while tries:
                     actual_checksum = -1
                     try:
@@ -402,11 +402,11 @@ class BootloaderHost(object):
                         self.progress("Uploading data", i, total)
                         break
                     else:
-                        tries = tries-1
+                        tries = tries - 1
                         if tries == 0:
                             raise BootloaderError(
                                 "Checksum does not match in array %d row %d. Expected %.2x, got %.2x! Aborting; tried %d times" % (
-                                    array_id, row_number, row.checksum, actual_checksum, nbOfTries))
+                                    array_id, row_number, row.checksum, actual_checksum, nb_of_tries))
             self.progress()
 
     def progress(self, message=None, current=None, total=None):
