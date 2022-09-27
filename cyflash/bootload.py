@@ -383,16 +383,30 @@ class BootloaderHost(object):
     def write_rows(self, data):
         total = sum(len(x) for x in data.arrays.values())
         i = 0
+        nb_of_tries = 3
         for array_id, array in six.iteritems(data.arrays):
             for row_number, row in array.items():
-                i += 1
-                self.session.program_row(array_id, row_number, row.data, self.chunk_size)
-                actual_checksum = self.session.get_row_checksum(array_id, row_number)
-                if actual_checksum != row.checksum:
-                    raise BootloaderError(
-                        "Checksum does not match in array %d row %d. Expected %.2x, got %.2x! Aborting." % (
-                            array_id, row_number, row.checksum, actual_checksum))
-                self.progress("Uploading data", i, total)
+                tries = nb_of_tries
+                while tries:
+                    actual_checksum = -1
+                    try:
+                        self.session.program_row(array_id, row_number, row.data, self.chunk_size)
+                        actual_checksum = self.session.get_row_checksum(array_id, row_number)
+                    except Exception as e:
+                        self.out.write("\nwill retry " + str(e) + "\n")
+                        # try to read if there is data left!
+                        self.session.transport.f.read(10)
+
+                    if actual_checksum == row.checksum:
+                        i += 1
+                        self.progress("Uploading data", i, total)
+                        break
+                    else:
+                        tries = tries - 1
+                        if tries == 0:
+                            raise BootloaderError(
+                                "Checksum does not match in array %d row %d. Expected %.2x, got %.2x! Aborting; tried %d times" % (
+                                    array_id, row_number, row.checksum, actual_checksum, nb_of_tries))
             self.progress()
 
     def progress(self, message=None, current=None, total=None):
